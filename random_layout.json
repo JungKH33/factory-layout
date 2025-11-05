@@ -1,0 +1,83 @@
+{
+  "equipments": [
+    {
+      "class_index": 1,
+      "clearance_bottom": 1,
+      "clearance_left": 1,
+      "clearance_right": 1,
+      "clearance_top": 1,
+      "height": 2,
+      "name": "Press-200",
+      "width": 2
+    },
+    {
+      "class_index": 2,
+      "clearance_bottom": 1,
+      "clearance_left": 0,
+      "clearance_right": 2,
+      "clearance_top": 1,
+      "height": 1,
+      "name": "CNC-450",
+      "width": 3
+    },
+    {
+      "class_index": 3,
+      "clearance_bottom": 1,
+      "clearance_left": 1,
+      "clearance_right": 1,
+      "clearance_top": 1,
+      "height": 2,
+      "name": "Inspection",
+      "width": 2
+    }
+  ],
+  "placed": {
+    "1": [
+      [
+        2,
+        2
+      ],
+      [
+        6,
+        2
+      ],
+      [
+        10,
+        6
+      ]
+    ],
+    "2": [
+      [
+        13,
+        6
+      ]
+    ],
+    "3": [
+      [
+        13,
+        1
+      ],
+      [
+        16,
+        3
+      ],
+      [
+        6,
+        7
+      ],
+      [
+        9,
+        2
+      ],
+      [
+        3,
+        5
+      ]
+    ]
+  },
+  "to_place": {
+    "1": 6,
+    "2": 4,
+    "3": 12
+  }
+}

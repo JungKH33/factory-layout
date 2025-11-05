@@ -1,0 +1,26 @@
+{
+  "placements": [
+    {
+      "class_index": 1,
+      "is_preplaced": true,
+      "name": "Press-200",
+      "x": 1,
+      "y": 1
+    },
+    {
+      "class_index": 2,
+      "is_preplaced": true,
+      "name": "CNC-450",
+      "x": 10,
+      "y": 5
+    },
+    {
+      "class_index": 1,
+      "is_preplaced": false,
+      "name": "Press-200",
+      "x": 8,
+      "y": 7
+    }
+  ],
+  "remaining_count": 21
+}
