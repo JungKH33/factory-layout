@@ -1,0 +1,51 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  background: #f7f7f7;
+}
+
+.toolbar {
+  padding: 10px 14px;
+  background: #222;
+  color: #fff;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.layout {
+  display: flex;
+  padding: 16px;
+  gap: 16px;
+}
+
+#layout-canvas {
+  background: #fff;
+  border: 1px solid #ccc;
+}
+
+.side-panel {
+  width: 320px;
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 10px;
+  height: 600px;
+  overflow: auto;
+}
+
+#value-chart {
+  border: 1px solid #eee;
+  margin-bottom: 8px;
+  background: #fafafa;
+}
+
+.candidate-item {
+  padding: 4px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 12px;
+}
+
+.candidate-item span {
+  display: inline-block;
+  min-width: 60px;
+}
