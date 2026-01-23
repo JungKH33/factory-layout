@@ -76,6 +76,7 @@ class DecisionPipeline:
 
         dbg2 = dict(dbg)
         dbg2.update({"valid_candidates": valid_n, "xyrot": (x, y, rot)})
+        dbg2["candidates"] = candidates
         return obs2, float(reward), bool(terminated), bool(truncated), info, dbg2
 
 

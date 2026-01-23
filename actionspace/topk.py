@@ -14,8 +14,12 @@ from .candidate_set import CandidateSet
 class TopKSelector:
     """Top-K candidates selector (ported from legacy `policies/topk_selector.py`).
 
+    IMPORTANT (new engine contract):
+    - (x,y) are integer bottom-left coordinates of the rotated AABB footprint.
+    - mask must match `env.is_placeable(gid, x_bl, y_bl, rot)` (includes clearance/pad/zone).
+
     Output:
-      - xyrot: int64 [K,3] padded with (0,0,0) (integer center coordinates)
+      - xyrot: int64 [K,3] padded with (0,0,0) (integer bottom-left coordinates)
       - mask:  bool [K] where True means VALID candidate exists
     """
 
@@ -25,13 +29,13 @@ class TopKSelector:
         k: int,
         # Defaults MUST match `policies/topk_selector.py:TopKConfig`
         scan_step: float = 2000.0,
-        quant_step: Optional[float] = None,
-        p_high: float = 0.55,
-        p_near: float = 0.25,
-        p_coarse: float = 0.12,
-        oversample_factor: int = 4,
-        diversity_ratio: float = 0.15,  # parity (unused)
-        min_diversity: int = 10,  # parity (unused)
+        quant_step: Optional[float] = 10.0,
+        p_high: float = 0.1,
+        p_near: float = 0.8,
+        p_coarse: float = 0.0,
+        oversample_factor: int = 2,
+        diversity_ratio: float = 0.0,  # parity (unused)
+        min_diversity: int = 0,  # parity (unused)
         random_seed: Optional[int] = None,
     ):
         self.k = int(k)
@@ -64,14 +68,63 @@ class TopKSelector:
 
         xyrot = torch.zeros((self.k, 3), dtype=torch.long, device=device)
         for i, c in enumerate(candidates[: self.k]):
-            _, x, y, rot = c
-            xyrot[i, 0] = int(x)
-            xyrot[i, 1] = int(y)
+            _, x_bl, y_bl, rot = c
+            xyrot[i, 0] = int(x_bl)
+            xyrot[i, 1] = int(y_bl)
             xyrot[i, 2] = int(rot)
 
         return CandidateSet(xyrot=xyrot, mask=mask, meta={"type": "topk", "k": int(self.k), "gid": gid})
 
-    # ---- candidate generation (int coords) ----
+    # ---- candidate generation (BL int coords) ----
+    def _cheap_reject_body(
+        self,
+        env: FactoryLayoutEnv,
+        *,
+        gid: GroupId,
+        x_bl: int,
+        y_bl: int,
+        rot: int,
+        wh_cache: Dict[int, Tuple[int, int]],
+    ) -> bool:
+        """Return True if candidate is certainly invalid by cheap checks (no false rejects).
+
+        We only do O(1) checks here:
+        - Boundary check for the BODY rect (pad/clearance is still validated by env.is_placeable()).
+        - Sample a handful of cells inside the body rect (corners + center). If any sampled cell is
+          invalid (core invalid or others' clearance), the placement is certainly invalid.
+
+        NOTE: This is an optimization to reduce calls to env.is_placeable(). We still call
+        env.is_placeable() for exact validation to avoid false accepts.
+        """
+        w, h = wh_cache[int(rot)]
+        gw = int(env.grid_width)
+        gh = int(env.grid_height)
+
+        # Body boundary (half-open): [x_bl, x_bl+w) x [y_bl, y_bl+h)
+        if x_bl < 0 or y_bl < 0 or (x_bl + w) > gw or (y_bl + h) > gh:
+            return True
+        if w <= 0 or h <= 0:
+            return True
+
+        invalid = env._invalid  # torch.BoolTensor[H,W]
+        clear_invalid = env._clear_invalid  # torch.BoolTensor[H,W]
+
+        x0 = int(x_bl)
+        y0 = int(y_bl)
+        x1 = x0 + int(w) - 1
+        y1 = y0 + int(h) - 1
+        xc = (x0 + x1) // 2
+        yc = (y0 + y1) // 2
+
+        # 5-point sampling: corners + center (all guaranteed in-bounds by boundary check above)
+        pts = ((x0, y0), (x1, y0), (x0, y1), (x1, y1), (xc, yc))
+        for px, py in pts:
+            if bool(invalid[py, px].item()):
+                return True
+            if bool(clear_invalid[py, px].item()):
+                return True
+        return False
+
     def _generate(
         self, env: FactoryLayoutEnv, next_group_id: GroupId
     ) -> Tuple[List[Tuple[GroupId, int, int, int]], torch.Tensor]:
@@ -83,6 +136,8 @@ class TopKSelector:
 
         n_high, n_near, n_coarse, n_rand = self._quota(self.k)
         group = env.groups[next_group_id]
+        rotations = (0, 90) if getattr(group, "rotatable", False) else (0,)
+        wh_cache = {int(r): self._wh_int(env, next_group_id, int(r)) for r in rotations}
 
         raw_tagged: List[Tuple[int, Tuple[GroupId, int, int, int]]] = []
         raw_tagged.extend((0, c) for c in self._source_high(env, next_group_id, n_high * self.oversample_factor))
@@ -92,7 +147,10 @@ class TopKSelector:
 
         unique_tagged = self._dedup_tagged(raw_tagged, q, group)
         valid_tagged = [
-            (src, c) for src, c in unique_tagged if env.is_placeable(next_group_id, float(c[1]), float(c[2]), int(c[3]))
+            (src, c)
+            for src, c in unique_tagged
+            if (not self._cheap_reject_body(env, gid=next_group_id, x_bl=int(c[1]), y_bl=int(c[2]), rot=int(c[3]), wh_cache=wh_cache))
+            and env.is_placeable(next_group_id, float(c[1]), float(c[2]), int(c[3]))
         ]
 
         pools: Dict[int, List[Tuple[GroupId, int, int, int]]] = {0: [], 1: [], 2: [], 3: []}
@@ -114,11 +172,25 @@ class TopKSelector:
 
         return final, mask
 
+    # ---- BL helpers ----
+    def _wh_int(self, env: FactoryLayoutEnv, gid: GroupId, rot: int) -> Tuple[int, int]:
+        g = env.groups[gid]
+        w, h = env.rotated_size(g, int(rot))
+        return int(round(float(w))), int(round(float(h)))
+
+    def _clamp_bl(self, env: FactoryLayoutEnv, x_bl: int, y_bl: int, w: int, h: int) -> Tuple[int, int]:
+        max_x = int(env.grid_width) - int(w)
+        max_y = int(env.grid_height) - int(h)
+        if max_x < 0 or max_y < 0:
+            return 0, 0
+        x2 = max(0, min(int(x_bl), max_x))
+        y2 = max(0, min(int(y_bl), max_y))
+        return int(x2), int(y2)
+
     def _generate_initial(
         self, env: FactoryLayoutEnv, gid: GroupId, quant_step: float
     ) -> Tuple[List[Tuple[GroupId, int, int, int]], torch.Tensor]:
         device = env.device
-        group = env.groups[gid]
         total_k = self.k * self.oversample_factor
         n_strat_target = round(total_k * 0.9)
         n_rand = total_k - n_strat_target
@@ -127,8 +199,16 @@ class TopKSelector:
         raw_tagged.extend((0, c) for c in self._source_stratified(env, gid, n_strat_target))
         raw_tagged.extend((1, c) for c in self._source_random(env, gid, n_rand))
 
+        group = env.groups[gid]
+        rotations = (0, 90) if getattr(group, "rotatable", False) else (0,)
+        wh_cache = {int(r): self._wh_int(env, gid, int(r)) for r in rotations}
         unique_tagged = self._dedup_tagged(raw_tagged, quant_step, group)
-        valid_candidates = [c for _, c in unique_tagged if env.is_placeable(gid, float(c[1]), float(c[2]), int(c[3]))]
+        valid_candidates = [
+            c
+            for _, c in unique_tagged
+            if (not self._cheap_reject_body(env, gid=gid, x_bl=int(c[1]), y_bl=int(c[2]), rot=int(c[3]), wh_cache=wh_cache))
+            and env.is_placeable(gid, float(c[1]), float(c[2]), int(c[3]))
+        ]
 
         final = valid_candidates[: self.k]
         mask = torch.zeros((self.k,), dtype=torch.bool, device=device)
@@ -154,11 +234,15 @@ class TopKSelector:
 
         candidates: List[Tuple[GroupId, int, int, int]] = []
         for rot in rotations:
+            w, h = self._wh_int(env, gid, int(rot))
+            if int(env.grid_width) - w < 0 or int(env.grid_height) - h < 0:
+                continue
             for i in range(nx):
                 for j in range(ny):
-                    x = int(round((i + 0.5) * dx))
-                    y = int(round((j + 0.5) * dy))
-                    candidates.append((gid, int(x), int(y), int(rot)))
+                    x_bl = int(round(i * dx))
+                    y_bl = int(round(j * dy))
+                    x_bl, y_bl = self._clamp_bl(env, x_bl, y_bl, w, h)
+                    candidates.append((gid, int(x_bl), int(y_bl), int(rot)))
         return candidates
 
     def _quota(self, k: int) -> Tuple[int, int, int, int]:
@@ -187,58 +271,52 @@ class TopKSelector:
     def _source_high(self, env: FactoryLayoutEnv, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
         group = env.groups[gid]
         rotations = (0, 90) if group.rotatable else (0,)
-        step = max(int(self.scan_step), 1)
+        step = max(int(round(self.scan_step)), 1)
         max_scan = 50000
 
-        def _jump_x(x: float, y: float, w: float, h: float, direction: int) -> Optional[float]:
-            y_min = y - h / 2.0
-            y_max = y + h / 2.0
-            best: Optional[float] = None
+        def _jump_x_bl(x_bl: int, y_bl: int, w: int, h: int, direction: int) -> Optional[int]:
+            y0 = int(y_bl)
+            y1 = int(y_bl) + int(h)
+            best: Optional[int] = None
             for pid in env.placed:
-                px, py, prot = env.positions[pid]
-                pw, ph = env.rotated_size(env.groups[pid], prot)
-                left, right, bottom, top = env.rect_from_center(px, py, pw, ph)
-                if top <= y_min or bottom >= y_max:
+                px0, py0, px1, py1 = env.placed_body_rect_bl(pid)
+                if py1 <= y0 or py0 >= y1:
                     continue
-                if direction > 0 and left >= x:
-                    cand = right + w / 2.0
+                if direction > 0 and px0 >= x_bl:
+                    cand = int(px1)
                     if best is None or cand < best:
                         best = cand
-                if direction < 0 and right <= x:
-                    cand = left - w / 2.0
+                if direction < 0 and px1 <= x_bl:
+                    cand = int(px0) - int(w)
                     if best is None or cand > best:
                         best = cand
             return best
 
         results: List[Tuple[GroupId, int, int, int]] = []
-        bounds = (0.0, float(env.grid_width), 0.0, float(env.grid_height))
-
         for rot in rotations:
-            w, h = env.rotated_size(group, rot)
-            min_x, max_x, min_y, max_y = bounds
-            x_start = min_x + w / 2.0
-            y_start = min_y + h / 2.0
-            x = x_start
-            y = y_start
-
+            w, h = self._wh_int(env, gid, int(rot))
+            if int(env.grid_width) - w < 0 or int(env.grid_height) - h < 0:
+                continue
+            x_bl = 0
+            y_bl = 0
             for _ in range(max_scan):
-                results.append((gid, int(round(float(x))), int(round(float(y))), int(rot)))
+                x_bl, y_bl = self._clamp_bl(env, x_bl, y_bl, w, h)
+                results.append((gid, int(x_bl), int(y_bl), int(rot)))
 
-                if x + w / 2.0 < max_x:
-                    jump = _jump_x(x, y, w, h, 1)
+                if x_bl < (int(env.grid_width) - w):
+                    jump = _jump_x_bl(x_bl, y_bl, w, h, 1)
                     if jump is None:
-                        x += step
+                        x_bl += step
                     else:
-                        x = max(jump, x + step)
+                        x_bl = max(int(jump), x_bl + step)
                 else:
-                    y += step
-                    if y + h / 2.0 > max_y:
+                    y_bl += step
+                    if y_bl > (int(env.grid_height) - h):
                         break
-                    x = x_start
+                    x_bl = 0
 
                 if len(results) > count * 10:
                     break
-
         return results
 
     def _source_near(self, env: FactoryLayoutEnv, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
@@ -247,32 +325,29 @@ class TopKSelector:
         group = env.groups[gid]
         rotations = (0, 90) if group.rotatable else (0,)
         candidates: List[Tuple[GroupId, int, int, int]] = []
-
         for rot in rotations:
-            w, h = env.rotated_size(group, rot)
+            w, h = self._wh_int(env, gid, int(rot))
+            if int(env.grid_width) - w < 0 or int(env.grid_height) - h < 0:
+                continue
             for pid in env.placed:
-                px, py, prot = env.positions[pid]
-                pw, ph = env.rotated_size(env.groups[pid], prot)
-                lB, rB, bB, tB = env.rect_from_center(px, py, pw, ph)
-
-                x_events = [lB - w / 2.0, lB + w / 2.0, rB - w / 2.0, rB + w / 2.0]
-                y_events = [bB - h / 2.0, bB + h / 2.0, tB - h / 2.0, tB + h / 2.0]
-
-                for x in x_events:
-                    for y in y_events:
-                        candidates.append((gid, int(round(float(x))), int(round(float(y))), int(rot)))
+                px0, py0, px1, py1 = env.placed_body_rect_bl(pid)
+                x_events = [int(px0) - w, int(px0), int(px1) - w, int(px1)]
+                y_events = [int(py0) - h, int(py0), int(py1) - h, int(py1)]
+                for x_bl in x_events:
+                    for y_bl in y_events:
+                        x2, y2 = self._clamp_bl(env, int(x_bl), int(y_bl), w, h)
+                        candidates.append((gid, int(x2), int(y2), int(rot)))
         return candidates
 
     def _source_coarse(self, env: FactoryLayoutEnv, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
-        step = max(self.scan_step * 3, 1.0)
-        group = env.groups[gid]
-        w, h = env.rotated_size(group, 0)
-        xs = self._scan_axis(float(env.grid_width), float(w), float(step))
-        ys = self._scan_axis(float(env.grid_height), float(h), float(step))
+        step = max(int(round(float(self.scan_step * 3))), 1)
+        w, h = self._wh_int(env, gid, 0)
+        xs = self._scan_axis_bl(int(env.grid_width), w, step)
+        ys = self._scan_axis_bl(int(env.grid_height), h, step)
         candidates: List[Tuple[GroupId, int, int, int]] = []
-        for x in xs:
-            for y in ys:
-                candidates.append((gid, int(round(float(x))), int(round(float(y))), 0))
+        for x_bl in xs:
+            for y_bl in ys:
+                candidates.append((gid, int(x_bl), int(y_bl), 0))
         return candidates
 
     def _source_random(self, env: FactoryLayoutEnv, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
@@ -282,10 +357,13 @@ class TopKSelector:
         candidates: List[Tuple[GroupId, int, int, int]] = []
         for _ in range(count):
             rot = 0 if not group.rotatable else self._rng.choice([0, 90])
-            w, h = env.rotated_size(group, rot)
-            x = self._rng.uniform(w / 2.0, float(env.grid_width) - w / 2.0)
-            y = self._rng.uniform(h / 2.0, float(env.grid_height) - h / 2.0)
-            candidates.append((gid, int(round(float(x))), int(round(float(y))), int(rot)))
+            w, h = self._wh_int(env, gid, int(rot))
+            if int(env.grid_width) - w < 0 or int(env.grid_height) - h < 0:
+                continue
+            x_bl = int(round(self._rng.uniform(0.0, float(int(env.grid_width) - w))))
+            y_bl = int(round(self._rng.uniform(0.0, float(int(env.grid_height) - h))))
+            x_bl, y_bl = self._clamp_bl(env, x_bl, y_bl, w, h)
+            candidates.append((gid, int(x_bl), int(y_bl), int(rot)))
         return candidates
 
     def _dedup_tagged(
@@ -310,29 +388,28 @@ class TopKSelector:
     def _pad_candidates(self, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
         return [(gid, 0, 0, 0) for _ in range(count)]
 
-    def _scan_axis(self, limit: float, size: float, step: float) -> List[float]:
+    def _scan_axis_bl(self, limit: int, size: int, step: int) -> List[int]:
         if step <= 0:
-            step = 1.0
-        start = size / 2.0
-        end = limit - size / 2.0
-        if end < start:
+            step = 1
+        end = int(limit) - int(size)
+        if end < 0:
             return []
-        n = max(int((end - start) // step) + 1, 1)
-        return [start + i * step for i in range(n)]
+        return list(range(0, end + 1, int(step)))
 
 
 if __name__ == "__main__":
     import time
 
     from envs.json_loader import load_env
+    from envs.visualizer import plot_layout
 
     ENV_JSON = "env_configs/basic_01.json"
     K = 50
     SCAN_STEP = 10.0
     QUANT_STEP = 10.0
 
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     device = torch.device("cpu")
+
     loaded = load_env(ENV_JSON, device=device)
     env = loaded.env
     env.log = False
@@ -340,14 +417,43 @@ if __name__ == "__main__":
 
     selector = TopKSelector(k=K, scan_step=SCAN_STEP, quant_step=QUANT_STEP, random_seed=0)
     t0 = time.perf_counter()
-    candidates = selector.build(env)
-    dt_ms = (time.perf_counter() - t0) * 1000.0
+    candidates0 = selector.build(env)
+    dt0_ms = (time.perf_counter() - t0) * 1000.0
 
     print("[actionspace.topk demo]")
     print(" env=", ENV_JSON, "device=", device, "next_gid=", (env.remaining[0] if env.remaining else None))
     print(" k=", K, "scan_step=", SCAN_STEP, "quant_step=", QUANT_STEP)
-    print(" N=", int(candidates.mask.shape[0]), "valid=", int(candidates.mask.sum().item()))
-    print(" xyrot.dtype=", candidates.xyrot.dtype, "mask.dtype=", candidates.mask.dtype)
-    if int(candidates.mask.sum().item()) > 0:
-        print(" first_xyrot=", candidates.xyrot[0].tolist())
-    print(f" elapsed_ms={dt_ms:.3f}")
+    print(" [case A] empty layout (placed=0)")
+    print("  N=", int(candidates0.mask.shape[0]), "valid=", int(candidates0.mask.sum().item()))
+    print("  xyrot.dtype=", candidates0.xyrot.dtype, "mask.dtype=", candidates0.mask.dtype)
+    if int(candidates0.mask.sum().item()) > 0:
+        first_valid = int(torch.where(candidates0.mask)[0][0].item())
+        print("  first_valid_idx=", first_valid, "first_valid_xyrot=", candidates0.xyrot[first_valid].tolist())
+    print(f"  build_ms={dt0_ms:.3f}")
+    plot_layout(env, candidate_set=candidates0)
+
+    # ---- case B: hand-crafted example (NOT using TopK for placement) ----
+    # We reset the env with a fixed set of initial placements (bottom-left integer coords).
+    # NOTE: reset() will validate feasibility and raise ValueError if any pose is invalid.
+    fixed_initial_positions = {
+        # (x_bl, y_bl, rot)
+        "A": (170, 20, 0),   # A: 160x80
+        "B": (170, 120, 0),  # B: 120x120 (not rotatable)
+        "D": (330, 120, 0),  # D: 80x80
+    }
+    opts_b = dict(loaded.reset_kwargs)
+    opts_b["initial_positions"] = fixed_initial_positions
+    _obs_b, _info_b = env.reset(options=opts_b)
+
+    t1 = time.perf_counter()
+    candidates1 = selector.build(env) if env.remaining else candidates0
+    dt1_ms = (time.perf_counter() - t1) * 1000.0
+    print(" [case B] hand-crafted placements via reset(initial_positions=...)")
+    print("  initial_positions=", fixed_initial_positions)
+    print("  placed=", len(env.placed), "remaining=", len(env.remaining), "next_gid=", (env.remaining[0] if env.remaining else None))
+    print("  N=", int(candidates1.mask.shape[0]), "valid=", int(candidates1.mask.sum().item()))
+    if int(candidates1.mask.sum().item()) > 0:
+        first_valid = int(torch.where(candidates1.mask)[0][0].item())
+        print("  first_valid_idx=", first_valid, "first_valid_xyrot=", candidates1.xyrot[first_valid].tolist())
+    print(f"  build_ms={dt1_ms:.3f}")
+    plot_layout(env, candidate_set=candidates1)

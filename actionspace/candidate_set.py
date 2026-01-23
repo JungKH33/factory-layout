@@ -12,13 +12,13 @@ class CandidateSet:
 
     Conventions (aligned with `FactoryLayoutEnv.step_masked` and existing wrappers):
     - `mask`: 1D torch.BoolTensor[N], where True means VALID/selectable.
-    - `xyrot`: torch.Tensor[N,3] of (x, y, rot).
-      - Coarse selector: float32
-      - TopK selector: int64 (integer center coordinates, user requirement)
+    - `xyrot`: torch.Tensor[N,3] of (x_bl, y_bl, rot) in **bottom-left integer coordinates**.
+      Visualizers can convert BL -> center using `gid`.
     """
 
     xyrot: torch.Tensor  # [N,3]
     mask: torch.Tensor  # bool [N]
+    gid: Optional[int] = None
     meta: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:

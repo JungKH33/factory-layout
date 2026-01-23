@@ -8,8 +8,14 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 
 from envs.env import FactoryLayoutEnv, FacilityGroup
-from envs.env_old import FacilityGroup as FacilityGroupOld
-from envs.env_old import FactoryLayoutEnvOld, RectMask
+try:
+    # Optional legacy support (may be removed in new-only setups).
+    from envs.env_old import FacilityGroup as FacilityGroupOld  # type: ignore
+    from envs.env_old import FactoryLayoutEnvOld, RectMask  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    FacilityGroupOld = None  # type: ignore[assignment]
+    FactoryLayoutEnvOld = None  # type: ignore[assignment]
+    RectMask = None  # type: ignore[assignment]
 
 GroupId = Union[int, str]
 RectI = Tuple[int, int, int, int]  # (x0, y0, x1, y1) half-open
@@ -33,8 +39,10 @@ def _edges_to_adj(edges: List[List[Any]]) -> Dict[GroupId, Dict[GroupId, float]]
     return adj
 
 
-def _mask_from_forbidden_rects(grid_w: int, grid_h: int, rects: List[RectI]) -> RectMask:
+def _mask_from_forbidden_rects(grid_w: int, grid_h: int, rects: List[RectI]):
     """Build a RectMask where True means allowed and given rects are forbidden (set to False)."""
+    if RectMask is None:
+        raise RuntimeError("Legacy env_old support is not available (envs/env_old.py is missing).")
     allowed = [[True for _ in range(grid_w)] for _ in range(grid_h)]
     for x0, y0, x1, y1 in rects:
         x0 = max(0, min(grid_w, int(x0)))
@@ -95,15 +103,32 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
 
     groups: Dict[GroupId, FacilityGroup] = {}
     for gid, g in groups_cfg.items():
+        # NOTE: Engine expects integer grid units for geometry and clearance.
+        # We convert JSON values to ints here to avoid float/half-cell ambiguity.
+        def _to_int(v: Any) -> int:
+            try:
+                return int(round(float(v)))
+            except Exception as e:
+                raise ValueError(f"groups[{gid}]: expected number, got {v!r}") from e
+
         groups[gid] = FacilityGroup(
             id=gid,
-            width=float(g["width"]),
-            height=float(g["height"]),
+            width=_to_int(g["width"]),
+            height=_to_int(g["height"]),
             movable=bool(g.get("movable", True)),
             rotatable=bool(g.get("rotatable", True)),
             facility_weight=float(g.get("facility_weight", 0.0)),
             facility_height=float(g.get("facility_height", 0.0)),
             facility_dry=float(g.get("facility_dry", 0.0)),
+            # IO offsets (center-based local coords; optional)
+            ent_rel_x=float(g.get("ent_rel_x", 0.0)),
+            ent_rel_y=float(g.get("ent_rel_y", 0.0)),
+            exi_rel_x=float(g.get("exi_rel_x", 0.0)),
+            exi_rel_y=float(g.get("exi_rel_y", 0.0)),
+            facility_clearance_left=_to_int(g.get("facility_clearance_left", 0)),
+            facility_clearance_right=_to_int(g.get("facility_clearance_right", 0)),
+            facility_clearance_bottom=_to_int(g.get("facility_clearance_bottom", 0)),
+            facility_clearance_top=_to_int(g.get("facility_clearance_top", 0)),
         )
 
     flow_raw = data.get("flow", {})
@@ -170,7 +195,14 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         for gid, pose in reset_cfg["initial_positions"].items():
             if not (isinstance(pose, list) and len(pose) == 3):
                 raise ValueError(f"initial_positions[{gid}] must be [x, y, rot], got: {pose}")
-            ip[gid] = (float(pose[0]), float(pose[1]), int(pose[2]))
+            # (x,y) are integer bottom-left coordinates of rotated AABB.
+            # Convert to ints to match engine semantics.
+            try:
+                x_bl = int(round(float(pose[0])))
+                y_bl = int(round(float(pose[1])))
+            except Exception as e:
+                raise ValueError(f"initial_positions[{gid}]: x/y must be numbers, got: {pose}") from e
+            ip[gid] = (x_bl, y_bl, int(pose[2]))
         reset_kwargs["initial_positions"] = ip
     if "remaining_order" in reset_cfg and reset_cfg["remaining_order"] is not None:
         reset_kwargs["remaining_order"] = list(reset_cfg["remaining_order"])
@@ -182,12 +214,14 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
 class LoadedEnvOld:
     """Result of loading a legacy candidate env from a JSON spec."""
 
-    env: FactoryLayoutEnvOld
+    env: Any
     reset_kwargs: Dict[str, Any]
 
 
 def load_env_old(json_path: str) -> LoadedEnvOld:
     """Load a FactoryLayoutEnvOld (legacy) from a JSON spec file."""
+    if FactoryLayoutEnvOld is None or FacilityGroupOld is None:
+        raise RuntimeError("load_env_old() is unavailable because envs/env_old.py is missing.")
     path = Path(json_path)
     data = json.loads(path.read_text(encoding="utf-8"))
 

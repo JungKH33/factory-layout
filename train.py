@@ -6,7 +6,7 @@
 
 Notes:
 - env returns torch.Tensors; we convert them to numpy for Tianshou collectors.
-- The AlphaChip model expects a PyG Batch (Data/Batch) + mask_flat.
+- The AlphaChip model expects a PyG Batch (Data/Batch) + action_mask (passed as `mask_flat` into the model API).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from tianshou.utils.net.common import AbstractDiscreteActor, ModuleWithVectorOut
 from torch_geometric.data import Batch, Data
 
 from agents.alphachip.model import AlphaChip
-from envs.wrappers import CoarseWrapperEnv
+from envs.wrappers.alphachip import AlphaChipWrapperEnv
 from envs.env import FacilityGroup, FactoryLayoutEnv
 
 
@@ -55,7 +55,7 @@ def _slice_batched_obs(obs: Dict[str, Any], b: int) -> Dict[str, Any]:
 
 
 def obs_to_pyg_and_mask(obs: Dict[str, Any], *, device: torch.device) -> Tuple[Batch, torch.Tensor]:
-    """Convert env_new observation(s) into a PyG Batch + mask_flat.
+    """Convert env_new observation(s) into a PyG Batch + action_mask (int32).
 
     env_new keys used:
       - x: [N,F] or [B,N,F]
@@ -63,7 +63,7 @@ def obs_to_pyg_and_mask(obs: Dict[str, Any], *, device: torch.device) -> Tuple[B
       - edge_attr: [E,1] or [B,E,1]
       - current_node: [1] or [B,1]
       - netlist_metadata: [12] or [B,12]
-      - mask_flat: [A] or [B,A]
+      - action_mask: [A] or [B,A]
   """
     x = obs["x"]
     batched = isinstance(x, np.ndarray) and x.ndim == 3
@@ -83,7 +83,7 @@ def obs_to_pyg_and_mask(obs: Dict[str, Any], *, device: torch.device) -> Tuple[B
                 )
             )
         batch = Batch.from_data_list(data_list)
-        mask_flat = _as_torch(obs["mask_flat"], device=device, dtype=torch.int32)
+        mask_flat = _as_torch(obs["action_mask"], device=device, dtype=torch.int32)
         if mask_flat.dim() == 1:
             mask_flat = mask_flat.view(B, -1)
         return batch, mask_flat
@@ -96,7 +96,7 @@ def obs_to_pyg_and_mask(obs: Dict[str, Any], *, device: torch.device) -> Tuple[B
         current_node=_as_torch(obs["current_node"], device=device, dtype=torch.long).view(-1),
     )
     batch = Batch.from_data_list([data])
-    mask_flat = _as_torch(obs["mask_flat"], device=device, dtype=torch.int32).view(1, -1)
+    mask_flat = _as_torch(obs["action_mask"], device=device, dtype=torch.int32).view(1, -1)
     return batch, mask_flat
 
 
@@ -135,7 +135,7 @@ class Actor(AbstractDiscreteActor):
 
     def __init__(self, model: AlphaChip, *, action_dim: int):
         super().__init__(output_dim=int(action_dim))
-    self.model = model
+        self.model = model
         self._preprocess = _IdentityPreprocess(output_dim=int(action_dim))
 
     def get_preprocess_net(self) -> ModuleWithVectorOutput:  # type: ignore[override]
@@ -149,10 +149,10 @@ class Actor(AbstractDiscreteActor):
 
 class Critic(nn.Module):
     def __init__(self, model: AlphaChip):
-    super().__init__()
-    self.model = model
+        super().__init__()
+        self.model = model
 
-  def forward(self, obs, state=None, info=None):
+    def forward(self, obs, state=None, info=None):  
         data, mask_flat = obs_to_pyg_and_mask(obs, device=self.model.device)
         _logits, value = self.model(data, mask_flat=mask_flat, is_eval=True)
         return value
@@ -179,7 +179,7 @@ def _build_env(*, grid_w: int, grid_h: int, coarse_grid: int, max_steps: int) ->
         device=dev_env,
         max_steps=max_steps,
     )
-    env = CoarseWrapperEnv(engine=engine, coarse_grid=coarse_grid, rot=0)
+    env = AlphaChipWrapperEnv(engine=engine, coarse_grid=coarse_grid, rot=0)
     return _NumpyObsWrapper(env)
 
 

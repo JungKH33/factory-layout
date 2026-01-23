@@ -12,9 +12,10 @@ import networkx as nx
 from typing import Any
 
 from envs.env import FactoryLayoutEnv
+from actionspace.candidate_set import CandidateSet
 
 
-def plot_layout(env: Any, *, mask_flat: Optional[object] = None) -> None:
+def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> None:
     """Interactive viewer (dynamic toggles only).
 
     - No save_path/show_* args here on purpose: use `save_layout(...)` for saving.
@@ -170,37 +171,41 @@ def plot_layout(env: Any, *, mask_flat: Optional[object] = None) -> None:
 
     # Placed rects.
     for gid in engine.placed:
-        x, y, rot = engine.positions[gid]
+        x_bl, y_bl, rot = engine.positions[gid]
         group = engine.groups[gid]
         w, h = engine.rotated_size(group, rot)
-        left, right, bottom, top = engine.rect_from_center(x, y, w, h)
         rect = patches.Rectangle(
-            (left, bottom),
-            right - left,
-            top - bottom,
+            (float(x_bl), float(y_bl)),
+            float(w),
+            float(h),
             linewidth=1.2,
             edgecolor="black",
             facecolor="orange",
             alpha=0.6,
         )
         ax.add_patch(rect)
-        ax.text(x, y, str(gid), ha="center", va="center", fontsize=8)
+        cx, cy = engine.pose_center(gid)
+        ax.text(cx, cy, str(gid), ha="center", va="center", fontsize=8)
 
-    # candidates (start hidden): visualize valid actions from mask_flat as points
-    if mask_flat is not None:
-        mf = _as_mask_flat(mask_flat)
-        idxs = np.where(mf)[0]
-        if idxs.size > 0:
-            xs = []
-            ys = []
-            for a in idxs.tolist():
-                if hasattr(env, "decode_action"):
-                    x, y, _, _, _ = env.decode_action(int(a))
-                else:
-                    # Engine alone does not define action semantics; wrapper must provide decode_action.
-                    continue
-                xs.append(x)
-                ys.append(y)
+    # candidates (start hidden): visualize candidates from CandidateSet
+    if candidate_set is not None:
+        meta = candidate_set.meta or {}
+        # As of BL-integer unification, CandidateSet.xyrot is always interpreted as
+        # (x_bl, y_bl, rot). We need `gid` to convert BL -> center for plotting.
+        gid = getattr(candidate_set, "gid", None)
+        if gid is None:
+            # Backward-compat: allow passing gid through meta for older call sites.
+            gid = meta.get("gid", None)
+        xyrot = candidate_set.xyrot[candidate_set.mask]
+        if int(xyrot.shape[0]) > 0:
+            xs: list[float] = []
+            ys: list[float] = []
+            if gid is None:
+                raise ValueError("CandidateSet must include `gid` (or meta['gid']) to convert BL->center for plotting.")
+            for x_bl, y_bl, rot in xyrot.detach().cpu().tolist():
+                cx, cy = engine.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(rot))
+                xs.append(float(cx))
+                ys.append(float(cy))
             sc = ax.scatter(xs, ys, s=18, c="green", alpha=0.65, linewidths=0.0)
             sc.set_visible(True)
             misc_artists["candidates"].append(sc)
@@ -299,7 +304,7 @@ def save_layout(
     show_flow: bool = False,
     show_score: bool = False,
     show_zones: bool = False,
-    mask_flat: Optional[object] = None,
+    candidate_set: Optional[CandidateSet] = None,
     save_path: str,
 ) -> None:
     """Save a static layout image (no interactive toggles)."""
@@ -416,35 +421,37 @@ def save_layout(
         _plot_mask(ax, engine.column_mask, color="blue", alpha=0.15)
 
     for gid in engine.placed:
-        x, y, rot = engine.positions[gid]
+        x_bl, y_bl, rot = engine.positions[gid]
         group = engine.groups[gid]
         w, h = engine.rotated_size(group, rot)
-        left, right, bottom, top = engine.rect_from_center(x, y, w, h)
         rect = patches.Rectangle(
-            (left, bottom),
-            right - left,
-            top - bottom,
+            (float(x_bl), float(y_bl)),
+            float(w),
+            float(h),
             linewidth=1.2,
             edgecolor="black",
             facecolor="orange",
             alpha=0.6,
         )
         ax.add_patch(rect)
-        ax.text(x, y, str(gid), ha="center", va="center", fontsize=8)
+        cx, cy = engine.pose_center(gid)
+        ax.text(cx, cy, str(gid), ha="center", va="center", fontsize=8)
 
-    if mask_flat is not None:
-        mf = _as_mask_flat(mask_flat)
-        idxs = np.where(mf)[0]
-        if idxs.size > 0:
-            xs = []
-            ys = []
-            for a in idxs.tolist():
-                if hasattr(env, "decode_action"):
-                    x, y, _, _, _ = env.decode_action(int(a))
-                else:
-                    continue
-                xs.append(x)
-                ys.append(y)
+    if candidate_set is not None:
+        meta = candidate_set.meta or {}
+        gid = getattr(candidate_set, "gid", None)
+        if gid is None:
+            gid = meta.get("gid", None)
+        xyrot = candidate_set.xyrot[candidate_set.mask]
+        if int(xyrot.shape[0]) > 0:
+            xs: list[float] = []
+            ys: list[float] = []
+            if gid is None:
+                raise ValueError("CandidateSet must include `gid` (or meta['gid']) to convert BL->center for plotting.")
+            for x_bl, y_bl, rot in xyrot.detach().cpu().tolist():
+                cx, cy = engine.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(rot))
+                xs.append(float(cx))
+                ys.append(float(cy))
             ax.scatter(xs, ys, s=18, c="green", alpha=0.65, linewidths=0.0)
 
     if show_flow:
@@ -507,11 +514,11 @@ def _plot_flow_overlay(ax: plt.Axes, env) -> list[Any]:
     for src, targets in env.group_flow.items():
         if src not in env.placed:
             continue
-        sx, sy, _ = env.positions[src]
+        sx, sy = env.pose_center(src)
         for dst, weight in targets.items():
             if dst not in env.placed:
                 continue
-            dx, dy, _ = env.positions[dst]
+            dx, dy = env.pose_center(dst)
             ann = ax.annotate(
                 "",
                 xy=(dx, dy),
@@ -557,15 +564,6 @@ def _as_mask_2d(mask_2d: object) -> np.ndarray:
     return m.astype(bool)
 
 
-def _as_mask_flat(mask_flat: object) -> np.ndarray:
-    if isinstance(mask_flat, np.ndarray):
-        m = mask_flat
-    else:
-        m = np.asarray(mask_flat.detach().cpu().numpy() if hasattr(mask_flat, "detach") else mask_flat)
-    if m.ndim != 1:
-        raise ValueError(f"mask_flat must be 1D, got {m.ndim}D")
-    return m.astype(bool)
-
 if __name__ == "__main__":
     # Demo (updated):
     # - Uses latest engine constraint fields:
@@ -573,7 +571,10 @@ if __name__ == "__main__":
     # - Shows zone overlays and interactive toggles (show=True only).
     import torch
 
-    from envs.wrappers import CoarseWrapperEnv, TopKWrapperEnv
+    from actionspace.coarse import CoarseSelector
+    from actionspace.topk import TopKSelector
+    from envs.wrappers.alphachip import AlphaChipWrapperEnv
+    from envs.wrappers.topk import TopKWrapperEnv
     from envs.env import FacilityGroup, FactoryLayoutEnv
 
     dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -603,9 +604,10 @@ if __name__ == "__main__":
 
     # Pre-place multiple groups to visualize non-empty layouts.
     # NOTE: reset() validates feasibility and raises ValueError if invalid.
+    # NOTE: (x,y) are bottom-left (integer) coordinates of rotated AABB.
     initial_positions = {
-        "A": (90.0, 20.0, 0),
-        "B": (90.0, 40.0, 0),
+        "A": (80, 15, 0),  # was center (90,20) for A(w=20,h=10)
+        "B": (82, 32, 0),  # was center (90,40) for B(w=16,h=16)
     }
     # Force next gid to be "C" so constraint-driven mask is visible immediately after reset.
     remaining_order = ["C", "A", "B"]
@@ -628,11 +630,11 @@ if __name__ == "__main__":
     )
 
     # ---- 1) Coarse wrapper demo ----
-    env1 = CoarseWrapperEnv(engine=engine, coarse_grid=32, rot=0)
-    obs1, _ = env1.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
-    mask1 = obs1["mask_flat"]
+    env1 = AlphaChipWrapperEnv(engine=engine, coarse_grid=32, rot=0)
+    _obs1, _ = env1.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
+    coarse_candidates = CoarseSelector(coarse_grid=32, rot=0).build(engine)
     # Interactive viewer: dynamic toggles control masks/flow/score/zones.
-    plot_layout(env1, mask_flat=mask1)
+    plot_layout(env1, candidate_set=coarse_candidates)
     plot_flow_graph(env1)
 
     # ---- 2) TopK wrapper demo ----
@@ -647,8 +649,8 @@ if __name__ == "__main__":
         oversample_factor=2,
         random_seed=7,
     )
-    obs2, _ = env2.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
-    mask2 = obs2["mask_flat"]
-    plot_layout(env2, mask_flat=mask2)
+    _obs2, _ = env2.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
+    topk_candidates = TopKSelector(k=70, scan_step=5.0, quant_step=5.0, random_seed=7).build(engine)
+    plot_layout(env2, candidate_set=topk_candidates)
     plot_flow_graph(env2)
 

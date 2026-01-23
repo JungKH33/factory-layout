@@ -7,7 +7,7 @@ import time
 import torch
 
 from envs.json_loader import load_env
-from envs.visualizer import save_layout
+from envs.visualizer import plot_layout, save_layout
 
 from agents.greedy import GreedyAgent
 from agents.alphachip.agent import AlphaChipAgent
@@ -18,18 +18,18 @@ from actionspace.coarse import CoarseSelector
 
 
 # --- config (module-level constants, keep simple) ---
-ENV_JSON: str = "env_configs/basic_01.json"
+ENV_JSON: str = "env_configs/constraints_01.json"
 ACTIONSPACE_MODE: str = "topk"  # "topk" | "coarse"
 AGENT_MODE: str = "greedy"  # "greedy" | "alphachip"
 ALPHACHIP_CHECKPOINT_PATH: str | None = r"D:\developments\Projects\factory-layout\results\checkpoints\2026-01-19_16-17_f34368\best.ckpt"  # required when AGENT_MODE="alphachip"
 
 TOPK_K: int = 50
 TOPK_SCAN_STEP: float = 5.0
-TOPK_QUANT_STEP: float = 5.0
+TOPK_QUANT_STEP: float = 10.0
 COARSE_GRID: int = 32
 MCTS_SIMS: int = 1000
 ROLLOUT_DEPTH: int = 10
-SEARCH_MODE: str = "beam"  # "none" | "mcts" | "beam"
+SEARCH_MODE: str = "mcts"  # "none" | "mcts" | "beam"
 
 SHOW_FLOW: bool = True
 SHOW_SCORE: bool = True
@@ -64,7 +64,7 @@ def main() -> None:
             k=TOPK_K,
             scan_step=TOPK_SCAN_STEP,
             quant_step=TOPK_QUANT_STEP,
-            random_seed=0,
+            random_seed=5,
         )
     elif ACTIONSPACE_MODE == "coarse":
         selector = CoarseSelector(coarse_grid=int(COARSE_GRID), rot=0)
@@ -108,7 +108,6 @@ def main() -> None:
 
     start = time.perf_counter()
     step = 0
-    last_candidates = None
 
     while not (terminated or truncated):
         step += 1
@@ -133,13 +132,16 @@ def main() -> None:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = out_dir / f"{ts}_{AGENT_MODE}_{ACTIONSPACE_MODE}_{SEARCH_MODE}.png"
 
+    # Preview before saving (interactive; close the window to continue).
+    plot_layout(env)
+
     save_layout(
         env,
         show_masks=SHOW_MASKS,
         show_flow=SHOW_FLOW,
         show_score=SHOW_SCORE,
         show_zones=False,
-        mask_flat=(last_candidates.mask if last_candidates is not None else None),
+        candidate_set=None,
         save_path=str(out_path),
     )
     print(f"saved_layout={out_path}")

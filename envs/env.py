@@ -10,7 +10,6 @@ import torch.nn.functional as F
 
 
 GroupId = Union[int, str]
-Rect = Tuple[float, float, float, float]  # (left, right, bottom, top)
 RectI = Tuple[int, int, int, int]  # (x0,y0,x1,y1) half-open (json-style)
 
 
@@ -28,12 +27,18 @@ class FacilityGroup:
     facility_height: float = 0.0
     facility_weight: float = 0.0
     facility_dry: float = 0.0
+    # IO relative offsets (CENTER-based local coordinates).
+    # These are rotated with the facility (multiples of 90 degrees) and added to the world center.
+    ent_rel_x: float = 0.0
+    ent_rel_y: float = 0.0
+    exi_rel_x: float = 0.0
+    exi_rel_y: float = 0.0
     # Clearance (asymmetric): L/R/B/T paddings for placement constraints.
-    # NOTE: Clearance is in grid units (same scale as width/height and (x,y) positions).
-    facility_clearance_left: float = 0.0
-    facility_clearance_right: float = 0.0
-    facility_clearance_bottom: float = 0.0
-    facility_clearance_top: float = 0.0
+    # NOTE: Clearance is in grid-cell units and MUST be integer-valued.
+    facility_clearance_left: int = 0
+    facility_clearance_right: int = 0
+    facility_clearance_bottom: int = 0
+    facility_clearance_top: int = 0
 
 
 class FactoryLayoutEnv(gym.Env):
@@ -117,7 +122,9 @@ class FactoryLayoutEnv(gym.Env):
         # --- metadata cache ---
         self._netlist_metadata = torch.zeros((12,), dtype=torch.float32, device=self.device)
 
-        self.positions: Dict[GroupId, Tuple[float, float, int]] = {}
+        # NOTE: positions store (x_bl, y_bl, rot) where (x_bl,y_bl) is the bottom-left
+        # of the rotated AABB footprint, in integer grid-cell coordinates.
+        self.positions: Dict[GroupId, Tuple[int, int, int]] = {}
         self.placed: set[GroupId] = set()
         self.remaining: List[GroupId] = []
         self._step_count = 0
@@ -170,24 +177,22 @@ class FactoryLayoutEnv(gym.Env):
     def _clearance_lrtb(self, g: FacilityGroup, rot: int) -> Tuple[float, float, float, float]:
         """Return (cL,cR,cB,cT) clearance for a group, accounting for rotation.
 
-        IMPORTANT: Currently `rotated_size()` only distinguishes 0 vs 90 degrees via (rot % 180),
-        so we match that behavior here. When rotation expands beyond 0/90, update this mapping
-        together with `rotated_size()`.
+        Clearance is integer-valued in grid-cell units. Rotation is restricted to multiples of 90
+        degrees; 180/270 are supported for correctness even if callers primarily use 0/90.
         """
-        cL = float(g.facility_clearance_left)
-        cR = float(g.facility_clearance_right)
-        cB = float(g.facility_clearance_bottom)
-        cT = float(g.facility_clearance_top)
-        r = int(rot) % 180
+        cL = self._as_int(g.facility_clearance_left, name="facility_clearance_left")
+        cR = self._as_int(g.facility_clearance_right, name="facility_clearance_right")
+        cB = self._as_int(g.facility_clearance_bottom, name="facility_clearance_bottom")
+        cT = self._as_int(g.facility_clearance_top, name="facility_clearance_top")
+        r = self._norm_rot(rot)
         if r == 90:
             # left'  <- bottom, right' <- top, bottom' <- right, top' <- left
             return (cB, cT, cR, cL)
+        if r == 180:
+            return (cR, cL, cT, cB)
+        if r == 270:
+            return (cT, cB, cL, cR)
         return (cL, cR, cB, cT)
-
-    @staticmethod
-    def _pad_rect(rect: Rect, *, cL: float, cR: float, cB: float, cT: float) -> Rect:
-        left, right, bottom, top = rect
-        return (left - float(cL), right + float(cR), bottom - float(cB), top + float(cT))
 
     def _update_zone_invalid_for_next(self) -> None:
         """Update `_zone_invalid` based on the *next* group (self.remaining[0])."""
@@ -248,18 +253,115 @@ class FactoryLayoutEnv(gym.Env):
         # naive_free_cells = int((~invalid).to(torch.int64).sum().item())
         return placeable, total
 
-    def _rect_hits_invalid(self, rect: Rect, invalid: torch.Tensor) -> bool:
+    @staticmethod
+    def _as_int(v: object, *, name: str) -> int:
+        """Coerce integer-valued inputs (int or float with .0) to int, else raise.
+
+        This avoids silent rounding bugs when we commit to integer grid coordinates.
+        """
+        if isinstance(v, bool):
+            raise ValueError(f"{name} must be int-like, got bool")
+        if isinstance(v, int):
+            return int(v)
+        if isinstance(v, float) and v.is_integer():
+            return int(v)
+        raise ValueError(f"{name} must be int-like (e.g., 3 or 3.0), got {v!r}")
+
+    @staticmethod
+    def _norm_rot(rot: int) -> int:
+        r = int(rot) % 360
+        if r % 90 != 0:
+            raise ValueError(f"rot must be a multiple of 90 degrees, got {rot!r}")
+        return r
+
+    @classmethod
+    def rotated_size(cls, group: FacilityGroup, rot: int) -> Tuple[float, float]:
+        """Rotated AABB footprint size (w_r, h_r) in grid units.
+
+        Supports 0/90/180/270; 180 behaves like 0, 270 like 90.
+        """
+        r = cls._norm_rot(rot)
+        if r in (90, 270):
+            return (float(group.height), float(group.width))
+        return (float(group.width), float(group.height))
+
+    @staticmethod
+    def rotate_point(dx: float, dy: float, rot: int) -> Tuple[float, float]:
+        """Rotate a local point (dx,dy) by multiples of 90 degrees (counter-clockwise)."""
+        r = int(rot) % 360
+        if r % 90 != 0:
+            raise ValueError(f"rot must be a multiple of 90 degrees, got {rot!r}")
+        if r == 0:
+            return (float(dx), float(dy))
+        if r == 90:
+            return (float(dy), -float(dx))
+        if r == 180:
+            return (-float(dx), -float(dy))
+        if r == 270:
+            return (-float(dy), float(dx))
+        # unreachable due to mod 360
+        return (float(dx), float(dy))
+
+    def _recti_hits_invalid(self, rect: RectI, invalid: torch.Tensor) -> bool:
         """Return True if rect intersects any invalid cell in `invalid` (bool[H,W], True=invalid)."""
-        left, right, bottom, top = rect
-        x0 = int(math.floor(left))
-        x1 = int(math.ceil(right))
-        y0 = int(math.floor(bottom))
-        y1 = int(math.ceil(top))
+        x0, y0, x1, y1 = rect
         if x0 < 0 or y0 < 0 or x1 > self.grid_width or y1 > self.grid_height:
             return True
         if x0 >= x1 or y0 >= y1:
             return False
         return bool(torch.any(invalid[y0:y1, x0:x1]).item())
+
+    def _body_rect_from_bl(self, *, gid: GroupId, x_bl: int, y_bl: int, rot: int) -> RectI:
+        g = self.groups[gid]
+        w, h = self.rotated_size(g, rot)
+        kw = self._as_int(w, name="width")
+        kh = self._as_int(h, name="height")
+        x0 = self._as_int(x_bl, name="x")
+        y0 = self._as_int(y_bl, name="y")
+        return (x0, y0, x0 + kw, y0 + kh)
+
+    # ---- public rect helpers (BL, integer, half-open) ----
+    def body_rect_bl(self, *, gid: GroupId, x_bl: int, y_bl: int, rot: int) -> RectI:
+        """Return body rect (x0,y0,x1,y1) for a pose in bottom-left integer coordinates."""
+        rot_n = self._norm_rot(int(rot))
+        return self._body_rect_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=rot_n)
+
+    def placed_body_rect_bl(self, gid: GroupId) -> RectI:
+        """Return placed body's rect (x0,y0,x1,y1) from stored BL pose in `self.positions`."""
+        x_bl, y_bl, rot = self.positions[gid]
+        return self.body_rect_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(rot))
+
+    @staticmethod
+    def _pad_rect_i(rect: RectI, *, cL: int, cR: int, cB: int, cT: int) -> RectI:
+        x0, y0, x1, y1 = rect
+        return (x0 - int(cL), y0 - int(cB), x1 + int(cR), y1 + int(cT))
+
+    def center_from_bl(self, *, gid: GroupId, x_bl: int, y_bl: int, rot: int) -> Tuple[float, float]:
+        """Return (cx,cy) center from bottom-left pose (x_bl,y_bl,rot) of rotated AABB.
+
+        NOTE: Engine stores positions as bottom-left integer coordinates. Center is derived
+        only for objective/features/visualization. Keeping this in one place avoids drift.
+        """
+        g = self.groups[gid]
+        w, h = self.rotated_size(g, rot)
+        return (float(x_bl) + float(w) / 2.0, float(y_bl) + float(h) / 2.0)
+
+    def pose_center(self, gid: GroupId) -> Tuple[float, float]:
+        """Return (cx,cy) center for an already-placed group from `self.positions`."""
+        x_bl, y_bl, rot = self.positions[gid]
+        return self.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(rot))
+
+    def compute_enex(self, gid: GroupId) -> Tuple[float, float, float, float]:
+        """Compute entry/exit coordinates for a placed group (center-based IO offsets)."""
+        if gid not in self.positions:
+            raise KeyError(f"compute_enex: gid not placed: {gid!r}")
+        x_bl, y_bl, rot = self.positions[gid]
+        r = self._norm_rot(int(rot))
+        cx, cy = self.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(r))
+        g = self.groups[gid]
+        ent_dx, ent_dy = self.rotate_point(float(g.ent_rel_x), float(g.ent_rel_y), int(r))
+        exi_dx, exi_dy = self.rotate_point(float(g.exi_rel_x), float(g.exi_rel_y), int(r))
+        return (float(cx) + float(ent_dx), float(cy) + float(ent_dy), float(cx) + float(exi_dx), float(cy) + float(exi_dy))
 
     def estimate_delta_obj(self, *, gid: GroupId, x: float, y: float, rot: int) -> float:
         """Estimate *scaled* objective delta if placing `gid` at (x,y,rot).
@@ -268,12 +370,15 @@ class FactoryLayoutEnv(gym.Env):
         - If not placeable -> return 0.0 (caller can still rank/ignore).
         - Temporarily place using `try_place`, compute delta, then restore.
         """
-        if not self.is_placeable(gid, x, y, rot):
+        x_bl = self._as_int(x, name="x")
+        y_bl = self._as_int(y, name="y")
+        r = self._norm_rot(int(rot))
+        if not self.is_placeable(gid, float(x_bl), float(y_bl), int(r)):
             return 0.0
         cost_prev = float(self.cal_obj())
         prev_state = (dict(self.positions), set(self.placed), list(self.remaining))
         try:
-            self.try_place(gid, x, y, rot)
+            self.try_place(gid, float(x_bl), float(y_bl), int(r))
             cost_new = float(self.cal_obj())
         finally:
             self.positions, self.placed, self.remaining = prev_state
@@ -286,9 +391,12 @@ class FactoryLayoutEnv(gym.Env):
         NOTE: Engine-internal caches (occ/invalid/node_feat) are NOT updated here.
         Use `_apply_place(..., update_caches=True)` when you need cache consistency.
         """
-        if not self.is_placeable(gid, x, y, rot):
+        x_bl = self._as_int(x, name="x")
+        y_bl = self._as_int(y, name="y")
+        r = self._norm_rot(int(rot))
+        if not self.is_placeable(gid, float(x_bl), float(y_bl), int(r)):
             return False
-        self.positions[gid] = (float(x), float(y), int(rot))
+        self.positions[gid] = (int(x_bl), int(y_bl), int(r))
         self.placed.add(gid)
         if gid in self.remaining:
             self.remaining.remove(gid)
@@ -296,18 +404,22 @@ class FactoryLayoutEnv(gym.Env):
 
     def _apply_place(self, gid: GroupId, x: float, y: float, rot: int, *, update_caches: bool) -> None:
         """Internal: apply a placement and optionally update engine caches."""
-        self.positions[gid] = (float(x), float(y), int(rot))
+        x_bl = self._as_int(x, name="x")
+        y_bl = self._as_int(y, name="y")
+        r = self._norm_rot(int(rot))
+        self.positions[gid] = (int(x_bl), int(y_bl), int(r))
         self.placed.add(gid)
         if gid in self.remaining:
             self.remaining.remove(gid)
         if update_caches:
-            self._paint_occupancy(gid, float(x), float(y), int(rot))
+            self._paint_occupancy(gid, int(x_bl), int(y_bl), int(r))
             idx = self.gid_to_idx.get(gid, None)
             if idx is not None:
+                cx, cy = self.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(r))
                 self._node_feat[idx, 2] = 1.0
-                self._node_feat[idx, 3] = float(x) / float(self.grid_width)
-                self._node_feat[idx, 4] = float(y) / float(self.grid_height)
-                self._node_feat[idx, 5] = float(int(rot) % 360) / 360.0
+                self._node_feat[idx, 3] = float(cx) / float(self.grid_width)
+                self._node_feat[idx, 4] = float(cy) / float(self.grid_height)
+                self._node_feat[idx, 5] = float(int(r) % 360) / 360.0
 
     def _build_graph_static(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Build sparse graph tensors from group_flow.
@@ -334,32 +446,6 @@ class FactoryLayoutEnv(gym.Env):
             edge_attr = torch.zeros((0, 1), dtype=torch.float32, device=self.device)
         return edge_index, edge_attr
 
-    # ---- geometry helpers ----
-    @staticmethod
-    def rotated_size(group: FacilityGroup, rot: int) -> Tuple[float, float]:
-        rot = rot % 180
-        if rot == 90:
-            return (float(group.height), float(group.width))
-        return (float(group.width), float(group.height))
-
-    @staticmethod
-    def rect_from_center(x: float, y: float, w: float, h: float) -> Rect:
-        left = x - w / 2.0
-        right = x + w / 2.0
-        bottom = y - h / 2.0
-        top = y + h / 2.0
-        return (left, right, bottom, top)
-
-    @staticmethod
-    def rect_overlap(a: Rect, b: Rect) -> bool:
-        left_a, right_a, bottom_a, top_a = a
-        left_b, right_b, bottom_b, top_b = b
-        if right_a <= left_b or right_b <= left_a:
-            return False
-        if top_a <= bottom_b or top_b <= bottom_a:
-            return False
-        return True
-
     # ---- feasibility / objective ----
     def is_placeable(self, gid: GroupId, x: float, y: float, rot: int) -> bool:
         if gid not in self.groups:
@@ -367,43 +453,35 @@ class FactoryLayoutEnv(gym.Env):
         g = self.groups[gid]
         if not g.movable:
             return False
-        if (not g.rotatable) and rot != 0:
+        if (not g.rotatable) and int(rot) != 0:
             rot = 0
+        rot = self._norm_rot(int(rot))
 
-        w, h = self.rotated_size(g, rot)
-        rect = self.rect_from_center(x, y, w, h)
+        # IMPORTANT: (x,y) is bottom-left of rotated AABB in integer grid coordinates.
+        x_bl = self._as_int(x, name="x")
+        y_bl = self._as_int(y, name="y")
 
-        # boundary
-        if rect[0] < 0 or rect[1] > self.grid_width or rect[2] < 0 or rect[3] > self.grid_height:
-            return False
+        rect = self._body_rect_from_bl(gid=gid, x_bl=x_bl, y_bl=y_bl, rot=rot)  # (x0,y0,x1,y1)
 
-        # overlap
-        for pid in self.placed:
-            px, py, prot = self.positions[pid]
-            pw, ph = self.rotated_size(self.groups[pid], prot)
-            if self.rect_overlap(rect, self.rect_from_center(px, py, pw, ph)):
-                return False
-
-        # clearance-1: body must not enter other facilities' clearance regions.
-        # NOTE: clearance regions may overlap each other; that's OK. We only forbid BODY-in-clearance.
-        if self._rect_hits_invalid(rect, self._clear_invalid):
-            return False
-
-        # masks
-        if self.forbidden_mask is not None and self._rect_hits_invalid(rect, self.forbidden_mask.to(self.device)):
-            return False
-        if self.column_mask is not None and self._rect_hits_invalid(rect, self.column_mask.to(self.device)):
-            return False
-
-        # clearance-2: own clearance must not enter (static invalid) OR (zone invalid) OR (other bodies).
+        # clearance rotation (int)
         cL, cR, cB, cT = self._clearance_lrtb(g, rot)
-        rect_pad = self._pad_rect(rect, cL=cL, cR=cR, cB=cB, cT=cT)
-        base_for_clearance = self._static_invalid | self._zone_invalid | self._occ_invalid
-        if self._rect_hits_invalid(rect_pad, base_for_clearance):
+        rect_pad = self._pad_rect_i(rect, cL=int(cL), cR=int(cR), cB=int(cB), cT=int(cT))
+
+        # boundary: BOTH body and pad must stay inside.
+        # rect = (x0, y0, x1, y1)
+        if rect[0] < 0 or rect[1] < 0 or rect[2] > self.grid_width or rect[3] > self.grid_height:
+            return False
+        if rect_pad[0] < 0 or rect_pad[1] < 0 or rect_pad[2] > self.grid_width or rect_pad[3] > self.grid_height:
             return False
 
-        # dynamic zone invalid (weight/dry/height etc.)
-        if self._rect_hits_invalid(rect, self._invalid):
+        # body hits core invalid (static/occ/zone)
+        if self._recti_hits_invalid(rect, self._invalid):
+            return False
+        # body hits others' clearance
+        if self._recti_hits_invalid(rect, self._clear_invalid):
+            return False
+        # my clearance/pad hits static/occ/zone
+        if self._recti_hits_invalid(rect_pad, self._invalid):
             return False
 
         return True
@@ -417,25 +495,29 @@ class FactoryLayoutEnv(gym.Env):
             return 0.0
 
         total_distance = 0.0
+        # Flow distance: EXIT(g1) -> ENTRY(g2) Manhattan distance (legacy behavior).
+        enex_cache: Dict[GroupId, Tuple[float, float, float, float]] = {}
+        for gid in self.placed:
+            enex_cache[gid] = self.compute_enex(gid)
         for g1 in self.placed:
-            x1, y1, _ = self.positions[g1]
+            _en1_x, _en1_y, ex1_x, ex1_y = enex_cache[g1]
             for g2, w in self.group_flow.get(g1, {}).items():
                 if g2 not in self.placed:
                     continue
-                x2, y2, _ = self.positions[g2]
-                total_distance += float(w) * (abs(x1 - x2) + abs(y1 - y2))
+                en2_x, en2_y, _ex2_x, _ex2_y = enex_cache[g2]
+                total_distance += float(w) * (abs(ex1_x - en2_x) + abs(ex1_y - en2_y))
 
         min_x = float("inf")
         max_x = float("-inf")
         min_y = float("inf")
         max_y = float("-inf")
         for gid in self.placed:
-            x, y, rot = self.positions[gid]
+            x_bl, y_bl, rot = self.positions[gid]
             w, h = self.rotated_size(self.groups[gid], rot)
-            min_x = min(min_x, x - w / 2.0)
-            max_x = max(max_x, x + w / 2.0)
-            min_y = min(min_y, y - h / 2.0)
-            max_y = max(max_y, y + h / 2.0)
+            min_x = min(min_x, float(x_bl))
+            max_x = max(max_x, float(x_bl) + float(w))
+            min_y = min(min_y, float(y_bl))
+            max_y = max(max_y, float(y_bl) + float(h))
         compactness = 0.5 * ((max_x - min_x) + (max_y - min_y))
         return float(total_distance + compactness)
 
@@ -471,39 +553,41 @@ class FactoryLayoutEnv(gym.Env):
         return inv
 
     def _recompute_invalid(self) -> None:
-        # invalid = static | occ | zone (no new allocation)
-        self._invalid = self._static_invalid | self._occ_invalid | self._zone_invalid
+        # invalid = static | occ | zone (NO new allocation)
+        # Keep `self._invalid` as a persistent buffer and update it in-place to reduce
+        # large temporary tensors / memory traffic.
+        self._invalid.copy_(self._static_invalid)
+        self._invalid.logical_or_(self._occ_invalid)
+        self._invalid.logical_or_(self._zone_invalid)
 
-    def _paint_occupancy(self, gid: GroupId, x: float, y: float, rot: int) -> None:
-        g = self.groups[gid]
-        w, h = self.rotated_size(g, rot)
-        left, right, bottom, top = self.rect_from_center(x, y, w, h)
-        x0 = max(0, int(math.floor(left)))
-        x1 = min(self.grid_width, int(math.ceil(right)))
-        y0 = max(0, int(math.floor(bottom)))
-        y1 = min(self.grid_height, int(math.ceil(top)))
+    def _paint_occupancy(self, gid: GroupId, x_bl: int, y_bl: int, rot: int) -> None:
+        """Paint occupancy and clearance maps for an already-validated placement.
+
+        Inputs are bottom-left integer coordinates of the rotated AABB footprint.
+        """
+        rot = self._norm_rot(int(rot))
+        rect = self._body_rect_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=rot)
+        x0, y0, x1, y1 = rect
         if x0 < x1 and y0 < y1:
             self._occ_invalid[y0:y1, x0:x1] = True
 
-        # clearance invalid: paint padded body (placed facility's own clearance)
+        g = self.groups[gid]
         cL, cR, cB, cT = self._clearance_lrtb(g, rot)
-        cleft, cright, cbottom, ctop = self._pad_rect((left, right, bottom, top), cL=cL, cR=cR, cB=cB, cT=cT)
-        cx0 = max(0, int(math.floor(cleft)))
-        cx1 = min(self.grid_width, int(math.ceil(cright)))
-        cy0 = max(0, int(math.floor(cbottom)))
-        cy1 = min(self.grid_height, int(math.ceil(ctop)))
-        if cx0 < cx1 and cy0 < cy1:
-            self._clear_invalid[cy0:cy1, cx0:cx1] = True
+        rect_pad = self._pad_rect_i(rect, cL=int(cL), cR=int(cR), cB=int(cB), cT=int(cT))
+        px0, py0, px1, py1 = rect_pad
+        if px0 < px1 and py0 < py1:
+            self._clear_invalid[py0:py1, px0:px1] = True
 
         self._recompute_invalid()
 
     def _build_obs(self) -> Dict[str, torch.Tensor]:
-        gid = self.remaining[0] if self.remaining else list(self.groups.keys())[0]
-        g = self.groups[gid]
+        """Return *core* observation (model-agnostic).
 
-        # current_node index in the static node list
-        cur_idx = self.gid_to_idx.get(gid, 0)
-        current_node = torch.tensor([cur_idx], dtype=torch.long, device=self.device)
+        Policy-specific wrappers (AlphaChip/MaskPlace/TopK) should attach their own
+        extra observation fields on top of this core dict.
+        """
+        gid = self.remaining[0] if self.remaining else (self.node_ids[0] if self.node_ids else list(self.groups.keys())[0])
+        g = self.groups[gid]
 
         # metadata (keep dim=12 for now; refine later)
         placed_ratio = float(len(self.placed)) / float(max(1, len(self.node_ids)))
@@ -516,20 +600,34 @@ class FactoryLayoutEnv(gym.Env):
         self._netlist_metadata[3] = float(self.grid_width)
         self._netlist_metadata[4] = float(self.grid_height)
 
+        N = int(len(self.node_ids))
+        placed_mask = torch.zeros((N,), dtype=torch.bool, device=self.device)
+        pos = torch.full((N, 3), -1, dtype=torch.long, device=self.device)  # (x_bl,y_bl,rot) or -1
+        for gid2 in self.placed:
+            idx = self.gid_to_idx.get(gid2, None)
+            if idx is None:
+                continue
+            placed_mask[int(idx)] = True
+            x_bl, y_bl, rot = self.positions[gid2]
+            pos[int(idx), 0] = int(x_bl)
+            pos[int(idx), 1] = int(y_bl)
+            pos[int(idx), 2] = int(rot)
+
+        # current gid index (static node list)
+        cur_idx = int(self.gid_to_idx.get(gid, 0))
+
         obs: Dict[str, torch.Tensor] = {
-            # graph
-            "edge_index": self._edge_index,
-            "edge_attr": self._edge_attr,
-            "x": self._node_feat,
-            "current_node": current_node,
             "netlist_metadata": self._netlist_metadata,
-            # per-step
+            "current_gid_idx": torch.tensor([cur_idx], dtype=torch.long, device=self.device),
             # NOTE: normalized to canvas (grid) size for scale-stable learning.
             "next_group_wh": torch.tensor(
                 [float(g.width) / float(self.grid_width), float(g.height) / float(self.grid_height)],
                 dtype=torch.float32,
                 device=self.device,
             ),
+            "placed_mask": placed_mask,
+            "positions_bl": pos,
+            "step_count": torch.tensor([int(self._step_count)], dtype=torch.long, device=self.device),
         }
         return obs
 
@@ -542,19 +640,22 @@ class FactoryLayoutEnv(gym.Env):
             return self._build_obs(), 0.0, True, False, {"reason": "done"}
 
         gid = self.remaining[0]
-        info.update({"gid": gid, "x": float(x), "y": float(y), "rot": int(rot)})
+        x_bl = self._as_int(x, name="x")
+        y_bl = self._as_int(y, name="y")
+        r = self._norm_rot(int(rot))
+        info.update({"gid": gid, "x": int(x_bl), "y": int(y_bl), "rot": int(r)})
 
         cost_prev = self.cal_obj()
         terminated = False
         truncated = False
         reward = 0.0
 
-        if not self.is_placeable(gid, float(x), float(y), int(rot)):
+        if not self.is_placeable(gid, float(x_bl), float(y_bl), int(r)):
             reward = -1.0 / float(self.reward_scale)
             truncated = True
             info["reason"] = "not_placeable"
         else:
-            self._apply_place(gid, float(x), float(y), int(rot), update_caches=True)
+            self._apply_place(gid, float(x_bl), float(y_bl), int(r), update_caches=True)
             # next-gid dependent zones
             self._update_zone_invalid_for_next()
 
@@ -622,14 +723,17 @@ class FactoryLayoutEnv(gym.Env):
                 info["reason"] = "done"
             else:
                 gid = self.remaining[0]
-                if not self.is_placeable(gid, float(x), float(y), int(rot)):
+                x_bl = self._as_int(x, name="x")
+                y_bl = self._as_int(y, name="y")
+                r = self._norm_rot(int(rot))
+                if not self.is_placeable(gid, float(x_bl), float(y_bl), int(r)):
                     info["invalid"] = True
                     info["reason"] = "not_placeable"
                     reward = float(self._failure_penalty())
                     truncated = True
                 else:
                     cost_prev = float(self.cal_obj())
-                    self._apply_place(gid, float(x), float(y), int(rot), update_caches=True)
+                    self._apply_place(gid, float(x_bl), float(y_bl), int(r), update_caches=True)
                     cost_new = float(self.cal_obj())
                     reward = -(cost_new - cost_prev) / float(self.reward_scale)
                     info["invalid"] = False
@@ -660,56 +764,47 @@ class FactoryLayoutEnv(gym.Env):
         self.positions = {}
         self.placed = set()
 
-        # Base order: "harder-first" using placeable ratio (K/T) where:
-        # - K = number of valid top-left placements for this facility footprint
-        # - T = total number of top-left positions ((H-kh+1)*(W-kw+1))
-        # Smaller ratio => harder => placed earlier.
+        # Base order: "harder-first" heuristic.
         #
-        # NOTE: We also compute a naive free-cell count from (~invalid).sum() for reference/debug only.
-        ordering: List[Tuple[float, float, GroupId, int, int, int]] = []
+        # TEMP (requested): difficulty = facility_area / free_area.
+        # - invalid_area: inv.sum() where inv = static_only | zone_invalid_for_gid(gid)
+        # - free_area: total_area - invalid_area
+        # - facility_area: footprint area (w*h)
+        # Larger difficulty => bigger footprint relative to available free space => placed earlier.
+        #
+        # TODO(ord1): Restore placeable(K/T) ordering using conv2d-based top-left feasibility.
+        ordering: List[Tuple[float, float, GroupId, int]] = []
         static_only = self._static_invalid  # no occupancy at reset-time
         for gid in self.groups.keys():
             gg = self.groups[gid]
             inv = static_only | self._zone_invalid_for_gid(gid)
-            rots = [0] if (not gg.rotatable) else [0, 90]
-            placeable_sum = 0
-            total_sum = 0
-            for rot in rots:
-                w, h = self.rotated_size(gg, rot)
-                kw = max(1, int(math.ceil(float(w))))
-                kh = max(1, int(math.ceil(float(h))))
-                p, t = self._placeable_top_left_count(invalid=inv, kw=kw, kh=kh)
-                placeable_sum += int(p)
-                total_sum += int(t)
-            placeable = int(placeable_sum)
-            total = int(total_sum)
-            placeable_ratio = (float(placeable) / float(total)) if total > 0 else 0.0
-
             facility_area = float(gg.width) * float(gg.height)
             # invalid_area (requested): true invalid area on grid (cell units; 1 cell == 1 area unit here)
             invalid_area = int(inv.to(torch.int64).sum().item())
-            ordering.append((placeable_ratio, facility_area, gid, placeable, total, invalid_area))
+            total_area = int(self.grid_width) * int(self.grid_height)
+            free_area = max(1, int(total_area) - int(invalid_area))
+            denom = float(free_area)
+            difficulty = float(facility_area) / float(denom)
+            ordering.append((difficulty, facility_area, gid, invalid_area))
 
         # Sort:
-        # 1) placeable_ratio ascending (harder first)
+        # 1) difficulty descending (harder first)
         # 2) facility_area descending (bigger first among equally hard)
         # 3) gid for stable order
-        ordering.sort(key=lambda t: (t[0], -t[1], str(t[2])))
-        base_remaining = [gid for _ratio, _area, gid, _p, _t, _inv in ordering]
+        ordering.sort(key=lambda t: (-t[0], -t[1], str(t[2])))
+        base_remaining = [gid for _diff, _area, gid, _inv in ordering]
 
         if self.log:
-            print("[reset_order] harder-first by placeable_ratio (=K/T)")
-            for rank, (ratio, area, gid, p, t, invalid_area) in enumerate(ordering, start=1):
-                # Requested log fields:
-                # - facility_area: footprint area (w*h)
-                # - invalid_area: inv.sum() (cell units)
-                # - placeable: K/T where K is footprint-feasible top-left count
-                # - ratio: float(K)/float(T) (same fraction as placeable, but easier to eyeball/compare)
+            print("[reset_order] harder-first by difficulty (=facility_area/free_area)")
+            for rank, (diff, area, gid, invalid_area) in enumerate(ordering, start=1):
+                total_area = int(self.grid_width) * int(self.grid_height)
+                free_area = max(1, int(total_area) - int(invalid_area))
                 print(
                     f"  {rank}/{len(ordering)} gid={gid} "
                     f"facility_area={area:.1f} "
                     f"invalid_area={invalid_area} "
-                    f"placeable={p}/{t} ratio={ratio:.6g}"
+                    f"free_area={free_area} "
+                    f"difficulty={diff:.6g}"
                 )
         if remaining_order is not None:
             if not isinstance(remaining_order, list):
@@ -746,14 +841,16 @@ class FactoryLayoutEnv(gym.Env):
                     raise ValueError(f"reset(options): initial_positions has unknown group id: {gid!r}")
                 if (not isinstance(pose, (tuple, list))) or len(pose) != 3:
                     raise ValueError(f"reset(options): initial_positions[{gid!r}] must be (x,y,rot)")
-                x, y, rot = float(pose[0]), float(pose[1]), int(pose[2])
+                x = self._as_int(pose[0], name="x")
+                y = self._as_int(pose[1], name="y")
+                rot = self._norm_rot(int(pose[2]))
                 if gid in self.placed:
                     raise ValueError(f"reset(options): initial_positions contains duplicate gid: {gid!r}")
-                if not self.is_placeable(gid, x, y, rot):
+                if not self.is_placeable(gid, float(x), float(y), int(rot)):
                     raise ValueError(
-                        f"reset(options): invalid initial placement gid={gid!r} pose=({x:.3f},{y:.3f},{rot})"
+                        f"reset(options): invalid initial placement gid={gid!r} pose=({x},{y},{rot})"
                     )
-                self._apply_place(gid, x, y, rot, update_caches=True)
+                self._apply_place(gid, float(x), float(y), int(rot), update_caches=True)
 
             # Ensure invalid map is consistent (paint already recomputed, but keep invariant explicit).
             self._update_zone_invalid_for_next()
@@ -886,6 +983,6 @@ if __name__ == "__main__":
     # Optional visualization (interactive toggles).
     from envs.visualizer import plot_flow_graph, plot_layout
 
-    plot_layout(env, mask_flat=None)
+    plot_layout(env, candidate_set=None)
     plot_flow_graph(env)
 
