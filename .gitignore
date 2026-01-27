@@ -1,0 +1,14 @@
+# === Project artifacts ===
+results/
+pretrained/
+
+# === Python bytecode ===
+__pycache__/
+*.py[cod]
+*$py.class
+
+# === VS Code / Cursor ===
+.vscode/
+.cursor/
+
+
