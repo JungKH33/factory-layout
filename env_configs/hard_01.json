@@ -2,9 +2,6 @@
   "grid": { "width": 600, "height": 300, "grid_size": 1.0 },
   "env": {
     "max_candidates": 90,
-    "max_steps": 300,
-    "reward_scale": 100.0,
-    "penalty_scale": 30.0,
     "log": true
   },
   "groups": {

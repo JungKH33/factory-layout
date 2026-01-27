@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import torch
 
 from envs.env import FactoryLayoutEnv
-from actionspace.candidate_set import CandidateSet
+from envs.wrappers.candidate_set import CandidateSet
 from .base import Agent
 
 
@@ -28,16 +28,12 @@ class GreedyAgent:
 
         priors = torch.zeros((N,), dtype=torch.float32, device=device)
         valid = candidates.mask
-        valid_indices = [i for i in range(N) if bool(valid[i].item())]
-        if not valid_indices:
+        valid_idx = torch.where(valid.view(-1))[0]
+        if int(valid_idx.numel()) == 0:
             return priors
 
-        scores = torch.empty((len(valid_indices),), dtype=torch.float32, device=device)
-        for k, i in enumerate(valid_indices):
-            x = float(candidates.xyrot[i, 0].item())
-            y = float(candidates.xyrot[i, 1].item())
-            rot = int(candidates.xyrot[i, 2].item())
-            scores[k] = float(env.estimate_delta_obj(gid=gid, x=x, y=y, rot=rot))
+        xy = candidates.xyrot[valid_idx].to(device=device)
+        scores = env.estimate_delta_obj(gid=gid, x=xy[:, 0], y=xy[:, 1], rot=xy[:, 2]).to(dtype=torch.float32, device=device)
 
         temp = float(self.prior_temperature) if float(self.prior_temperature) > 0.0 else 1.0
         logits = -scores / temp
@@ -45,12 +41,11 @@ class GreedyAgent:
         probs = torch.exp(logits)
         probs_sum = float(probs.sum().item())
         if probs_sum <= 0.0:
-            probs = torch.full_like(probs, 1.0 / float(len(valid_indices)))
+            probs = torch.full_like(probs, 1.0 / float(max(1, int(valid_idx.numel()))))
         else:
             probs = probs / probs_sum
 
-        for idx, p in zip(valid_indices, probs):
-            priors[int(idx)] = float(p.item())
+        priors[valid_idx] = probs
         return priors
 
     def select_action(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> int:
@@ -60,50 +55,49 @@ class GreedyAgent:
             return 0
 
         valid = candidates.mask
-        valid_indices = [i for i in range(N) if bool(valid[i].item())]
-        if not valid_indices:
+        valid_idx = torch.where(valid.view(-1))[0]
+        if int(valid_idx.numel()) == 0:
             return 0
 
-        best_i = valid_indices[0]
-        best_score = float("inf")
-        for i in valid_indices:
-            x = float(candidates.xyrot[i, 0].item())
-            y = float(candidates.xyrot[i, 1].item())
-            rot = int(candidates.xyrot[i, 2].item())
-            d = float(env.estimate_delta_obj(gid=gid, x=x, y=y, rot=rot))
-            if d < best_score:
-                best_score = d
-                best_i = int(i)
-        return int(best_i)
+        xy = candidates.xyrot[valid_idx].to(device=env.device)
+        scores = env.estimate_delta_obj(gid=gid, x=xy[:, 0], y=xy[:, 1], rot=xy[:, 2]).to(dtype=torch.float32, device=env.device)
+        best_k = int(torch.argmin(scores).item()) if scores.numel() > 0 else 0
+        return int(valid_idx[best_k].item()) if int(valid_idx.numel()) > 0 else 0
+
+    def value(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> float:
+        # Leaf value for MCTS: higher is better, so negate the (positive) cost.
+        # Keep it consistent with env reward scaling.
+        return -float(env.cal_obj()) / float(env.reward_scale)
 
 
 if __name__ == "__main__":
     import time
 
     from envs.json_loader import load_env
-    from actionspace.topk import TopKSelector
+    from envs.wrappers.greedy import GreedyWrapperEnv
+    from envs.wrappers.candidate_set import CandidateSet
 
     ENV_JSON = "env_configs/basic_01.json"
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
-    env = loaded.env
-    env.log = False
-    obs, _info = env.reset(options=loaded.reset_kwargs)
-
-    selector = TopKSelector(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
-    candidates = selector.build(env)
+    engine = loaded.env
+    engine.log = False
+    wenv = GreedyWrapperEnv(engine=engine, k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    obs, _info = wenv.reset(options=loaded.reset_kwargs)
+    next_gid = wenv.engine.remaining[0] if wenv.engine.remaining else None
+    candidates = CandidateSet(xyrot=obs["action_xyrot"], mask=obs["action_mask"], gid=next_gid)
     agent = GreedyAgent(prior_temperature=1.0)
 
     t0 = time.perf_counter()
-    pri = agent.policy(env=env, obs=obs, candidates=candidates)
-    a = agent.select_action(env=env, obs=obs, candidates=candidates)
+    pri = agent.policy(env=engine, obs=obs, candidates=candidates)
+    a = agent.select_action(env=engine, obs=obs, candidates=candidates)
     dt_ms = (time.perf_counter() - t0) * 1000.0
 
     valid_n = int(candidates.mask.sum().item())
     xyrot = candidates.xyrot[a].tolist() if int(candidates.xyrot.shape[0]) > 0 else [0, 0, 0]
 
     print("[agents.greedy demo]")
-    print(" env=", ENV_JSON, "device=", device, "next_gid=", (env.remaining[0] if env.remaining else None))
+    print(" env=", ENV_JSON, "device=", device, "next_gid=", next_gid)
     print(" action=", a, "valid_candidates=", valid_n, "xyrot=", xyrot, "prior=", (float(pri[a].item()) if pri.numel() > 0 else 0.0))
     print(f" elapsed_ms={dt_ms:.3f}")

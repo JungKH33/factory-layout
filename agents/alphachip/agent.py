@@ -8,7 +8,7 @@ from typing import Optional
 import torch
 from torch_geometric.data import Data
 
-from actionspace.candidate_set import CandidateSet
+from envs.wrappers.candidate_set import CandidateSet
 from agents.base import Agent
 from envs.env import FactoryLayoutEnv
 
@@ -95,6 +95,21 @@ class AlphaChipAgent:
         pol = self.policy(env=env, obs=obs, candidates=candidates)
         pol = pol.masked_fill(~candidates.mask, float("-inf"))
         return int(torch.argmax(pol).item()) if pol.numel() > 0 else 0
+
+    @torch.no_grad()
+    def value(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> float:
+        expected_n = int(self.coarse_grid * self.coarse_grid)
+        n = int(candidates.mask.shape[0])
+        if n != expected_n:
+            raise ValueError(
+                f"AlphaChipAgent(value) requires coarse actionspace: expected N={expected_n}, got N={n}. "
+                f"(If you want TopK+AlphaChip, you need a mapping from TopK candidates to coarse logits.)"
+            )
+
+        data = _obs_to_pyg_data(obs)
+        mask_flat = candidates.mask.view(1, -1).to(dtype=torch.int32, device=self.device)
+        _logits_flat, value_t = self.model(data, mask_flat=mask_flat, is_eval=True)
+        return float(value_t.view(-1)[0].item()) if isinstance(value_t, torch.Tensor) and value_t.numel() > 0 else 0.0
 
 
 if __name__ == "__main__":

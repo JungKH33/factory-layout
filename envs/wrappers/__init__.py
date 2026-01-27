@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from .base import BaseWrapper
 from .alphachip import AlphaChipWrapperEnv
-from .topk import TopKWrapperEnv
+from .greedy import GreedyWrapperEnv
 from .maskplace import MaskPlaceWrapperEnv
 
 __all__ = [
     "BaseWrapper",
     "AlphaChipWrapperEnv",
-    "TopKWrapperEnv",
+    "GreedyWrapperEnv",
     "MaskPlaceWrapperEnv",
 ]
 

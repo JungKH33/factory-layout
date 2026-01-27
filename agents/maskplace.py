@@ -5,6 +5,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from envs.env import FactoryLayoutEnv
+from envs.wrappers.candidate_set import CandidateSet
+
 
 @dataclass(frozen=True)
 class StateLayout:
@@ -90,7 +93,7 @@ class Actor(nn.Module):
         self.layout = layout
         self.grid = layout.grid
         self.g2 = layout.grid * layout.grid
-        self.soft_coefficient = soft_coefficient
+        self.soft_coefficient = float(soft_coefficient)
 
         self.cnn = cnn
         self.cnn_coarse = cnn_coarse
@@ -175,3 +178,175 @@ class Critic(nn.Module):
         x1 = F.relu(self.fc1(self.pos_emb(pos_idx)))
         x2 = F.relu(self.fc2(x1))
         return self.state_value(x2)
+
+
+class MaskPlaceModel(nn.Module):
+    """Single nn.Module container for MaskPlace.
+
+    - Owns pretrained ResNet18 backbone, fine CNN, Actor, and Critic.
+    - Enables checkpoint save/load in the style: {"model": model.state_dict()}.
+
+    Notes:
+    - We intentionally do NOT expose a `pretrained_backbone` knob here. MaskPlace uses pretrained ResNet18.
+    """
+
+    def __init__(
+        self,
+        *,
+        grid: int = 224,
+        device: Optional[torch.device] = None,
+        soft_coefficient: float = 1.0,
+    ) -> None:
+        super().__init__()
+        self.grid = int(grid)
+        self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+
+        # Build submodules (ResNet is created here; external code should not instantiate it).
+        import torchvision
+
+        layout = StateLayout(grid=int(self.grid))
+        cnn_fine = MyCNN().to(self.device)
+        resnet = torchvision.models.resnet18(pretrained=True)
+        cnn_coarse = MyCNNCoarse(res_net=resnet, device=self.device).to(self.device)
+
+        self.actor = Actor(layout=layout, cnn=cnn_fine, cnn_coarse=cnn_coarse, soft_coefficient=float(soft_coefficient)).to(self.device)
+        self.critic = Critic().to(self.device)
+
+    def forward(self, state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return (action_probs[B,A], value[B,1])."""
+        probs, _cnn_res, _ = self.actor(state)
+        value = self.critic(state)
+        return probs, value
+
+
+class MaskPlaceAgent:
+    """Pipeline-compatible agent wrapper for MaskPlace.
+
+    External code should NOT instantiate resnet/cnn/coarse modules; this class owns a MaskPlaceModel.
+    """
+
+    def __init__(
+        self,
+        *,
+        device: Optional[torch.device] = None,
+        grid: int = 224,
+        soft_coefficient: float = 1.0,
+        checkpoint_path: Optional[str] = None,
+        model: Optional[MaskPlaceModel] = None,
+    ) -> None:
+        self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+        self.model = model or MaskPlaceModel(grid=int(grid), device=self.device, soft_coefficient=float(soft_coefficient)).to(self.device)
+        if checkpoint_path is not None:
+            obj = torch.load(str(checkpoint_path), map_location=self.device)
+            state = obj.get("model") if isinstance(obj, dict) else obj
+            if not isinstance(state, dict):
+                raise ValueError("MaskPlaceAgent: checkpoint must be a state_dict or dict with key 'model'.")
+            self.model.load_state_dict(state)
+        self.model.eval()
+
+    @torch.no_grad()
+    def policy(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> torch.Tensor:
+        state = obs.get("state", None)
+        if not isinstance(state, torch.Tensor):
+            raise ValueError("MaskPlaceAgent requires obs['state'] (torch.Tensor)")
+        st = state.to(device=self.device, dtype=torch.float32)
+        if st.dim() == 1:
+            st = st.view(1, -1)
+
+        probs, _value = self.model(st)
+        pri = probs[0].to(device=env.device, dtype=torch.float32).view(-1)
+
+        mask = candidates.mask.to(device=env.device, dtype=torch.bool).view(-1)
+        if int(mask.numel()) != int(pri.numel()):
+            # Fallback to obs action_mask if candidate mask mismatches.
+            om = obs.get("action_mask", None)
+            if isinstance(om, torch.Tensor) and int(om.numel()) == int(pri.numel()):
+                mask = om.to(device=env.device, dtype=torch.bool).view(-1)
+            else:
+                # last resort: no masking
+                mask = torch.ones_like(pri, dtype=torch.bool, device=env.device)
+
+        pri = pri.masked_fill(~mask, 0.0)
+        s = float(pri.sum().item())
+        if s > 0.0:
+            pri = pri / s
+        return pri
+
+    @torch.no_grad()
+    def select_action(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> int:
+        pri = self.policy(env=env, obs=obs, candidates=candidates)
+        if pri.numel() == 0:
+            return 0
+        return int(torch.argmax(pri).item())
+
+    @torch.no_grad()
+    def value(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> float:
+        state = obs.get("state", None)
+        if not isinstance(state, torch.Tensor):
+            return -float(env.cal_obj()) / float(env.reward_scale)
+        st = state.to(device=self.device, dtype=torch.float32)
+        if st.dim() == 1:
+            st = st.view(1, -1)
+        _probs, v = self.model(st)
+        return float(v.view(-1)[0].item()) if isinstance(v, torch.Tensor) and v.numel() > 0 else 0.0
+
+
+if __name__ == "__main__":
+    # Minimal shape/contract demo:
+    # - builds a dummy state vector with 5 maps (map0..map4) embedded
+    # - runs Actor/Critic forward
+    # - prints output shapes + a simple mask sanity check
+
+    torch.manual_seed(0)
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+    B = 1
+    grid = 224
+    # Build a single model container (no external resnet/cnn/coarse instantiation)
+    model = MaskPlaceModel(grid=grid, device=device, soft_coefficient=1.0).to(device)
+    layout = model.actor.layout
+    g2 = grid * grid
+    state_dim = 1 + 5 * g2 + 2
+
+    # Build a dummy state
+    state = torch.zeros((B, state_dim), dtype=torch.float32, device=device)
+    state[:, 0] = 0.0  # pos_idx
+    # extra2
+    state[:, 1 + 5 * g2 :] = torch.tensor([[0.1, 0.2]], dtype=torch.float32, device=device)
+
+    # Fill maps
+    maps = torch.zeros((B, 5, grid, grid), dtype=torch.float32, device=device)
+    # map0 canvas: some random occupancy-like noise
+    maps[:, 0] = (torch.rand((B, grid, grid), device=device) > 0.98).to(torch.float32)
+    # map1 net_img: random positive costs
+    maps[:, 1] = torch.rand((B, grid, grid), device=device) * 100.0
+    # map2 mask (hard invalid): mark a rectangle invalid
+    maps[:, 2, 50:90, 60:140] = 1.0
+    # map3 net_img_2
+    maps[:, 3] = torch.rand((B, grid, grid), device=device) * 100.0
+    # map4 mask_2
+    maps[:, 4, 120:160, 20:80] = 1.0
+
+    # Pack maps into state (matches StateLayout slicing)
+    state[:, layout.maps_slice] = maps.reshape(B, -1)
+
+    with torch.no_grad():
+        probs, v = model(state)
+        cnn_res = torch.zeros((B, 1, grid, grid), dtype=torch.float32, device=device)
+
+    print("[agents.maskplace demo]")
+    print(" device=", device)
+    print(" state.shape=", tuple(state.shape))
+    print(" maps.shape=", tuple(maps.shape), "(B,5,224,224)")
+    print(" actor.probs.shape=", tuple(probs.shape), "expected=(B, 224*224)")
+    print(" actor.cnn_res.shape=", tuple(cnn_res.shape), "expected=(B, 1, 224, 224)")
+    print(" critic.value.shape=", tuple(v.shape), "expected=(B, 1)")
+    print(" probs.sum=", float(probs.sum().item()))
+
+    # Simple mask sanity: invalid(map2==1) should be near-zero probability after masking.
+    invalid_flat = maps[:, 2].reshape(B, -1) > 0.5
+    if int(invalid_flat.sum().item()) > 0:
+        p_invalid_sum = float(probs[invalid_flat].sum().item())
+        p_valid_sum = float(probs[~invalid_flat].sum().item())
+        print(" invalid_cells=", int(invalid_flat.sum().item()))
+        print(" prob_sum_invalid=", p_invalid_sum, "prob_sum_valid=", p_valid_sum)

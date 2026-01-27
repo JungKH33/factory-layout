@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from envs.env import FactoryLayoutEnv
+from envs.wrappers.base import BaseWrapper
 
 from agents.base import Agent
-from actionspace.base import CandidateSelector
-from actionspace.candidate_set import CandidateSet
+from envs.wrappers.candidate_set import CandidateSet
 
 
 class SearchStrategy(Protocol):
@@ -15,11 +14,9 @@ class SearchStrategy(Protocol):
     def select(
         self,
         *,
-        env: FactoryLayoutEnv,
+        env: BaseWrapper,
         obs: dict,
         agent: Agent,
-        selector: CandidateSelector,
         root_candidates: CandidateSet,
-        root_selector_state: object,
     ) -> int: ...
 

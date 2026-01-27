@@ -1,6 +1,8 @@
 from __future__ import annotations
+import torch
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Callable
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -12,29 +14,161 @@ import networkx as nx
 from typing import Any
 
 from envs.env import FactoryLayoutEnv
-from actionspace.candidate_set import CandidateSet
+from envs.wrappers.candidate_set import CandidateSet
 
 
-def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> None:
-    """Interactive viewer (dynamic toggles only).
+@dataclass(frozen=True)
+class StepFrame:
+    """A single step frame for interactive browsing."""
 
-    - No save_path/show_* args here on purpose: use `save_layout(...)` for saving.
-    - This function always opens a window and lets you toggle layers via CheckButtons.
+    snapshot: dict[str, object]  # wrapper.get_snapshot()
+    candidates: CandidateSet
+    scores: "np.ndarray"  # float [N] (same length as candidates.xyrot)
+    selected_action: int
+    value: float
+    cost: float
+    step_idx: int
+
+
+def _set_visible_group(group: list[Any], v: bool) -> None:
+    for a in group:
+        try:
+            a.set_visible(bool(v))
+        except Exception:
+            pass
+
+
+def _default_layer_visibility() -> dict[str, bool]:
+    # Match plot_layout defaults:
+    # - zones ON
+    # - forbidden masks ON
+    # - engine-internal invalid/clearance OFF (toggle when debugging)
+    # - flow/score/candidates ON
+    return {
+        "forbidden_mask": True,
+        "invalid_mask": False,
+        "clearance_mask": False,
+        "flow": True,
+        "score": True,
+        "candidates": True,
+        "weight_zones": True,
+        "dry_zones": True,
+        "height_zones": True,
+        "placement_zones": True,
+    }
+
+
+def _apply_layer_visibility(groups: dict[str, list[Any]], vis: dict[str, bool]) -> None:
+    for k, g in groups.items():
+        if k not in vis:
+            continue
+        _set_visible_group(g, bool(vis[k]))
+
+
+def _legend_proxies() -> list[Any]:
+    # Keep consistent legend ordering/labels across viewers.
+    return [
+        patches.Patch(facecolor="red", edgecolor="red", alpha=0.15, label="forbidden_mask"),
+        patches.Patch(facecolor="#8b0000", edgecolor="#8b0000", alpha=0.10, label="invalid_mask"),
+        patches.Patch(facecolor="#ff6b6b", edgecolor="#ff6b6b", alpha=0.10, label="clearance_mask"),
+        Line2D([0], [0], color="blue", lw=1.5, alpha=0.3, label="flow"),
+        Line2D([0], [0], color="black", lw=0.0, marker="s", markersize=8, label="score"),
+        Line2D([0], [0], color="green", lw=0.0, marker="o", markersize=6, alpha=0.65, label="candidates"),
+        patches.Patch(facecolor="#1f77b4", edgecolor="#1f77b4", alpha=0.08, label="weight_zones"),
+        patches.Patch(facecolor="#2ca02c", edgecolor="#2ca02c", alpha=0.06, label="dry_zones"),
+        patches.Patch(facecolor="#7f7f7f", edgecolor="#7f7f7f", alpha=0.04, label="height_zones"),
+        patches.Patch(facecolor="#1e90ff", edgecolor="#1e90ff", alpha=0.12, label="placement_zones"),
+    ]
+
+
+def _install_click_legend(
+    *,
+    fig: plt.Figure,
+    ax: plt.Axes,
+    groups: dict[str, list[Any]],
+    vis: dict[str, bool],
+    title: str = "Click legend to toggle",
+    legend_ax: Optional[plt.Axes] = None,
+    connect_once_state: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Create a clickable legend that toggles artist visibility.
+
+    If connect_once_state is provided, we reuse its pick handler and only update
+    the internal (groups, mapping) references each render (important for browse_steps).
     """
-    # Support both engine (`FactoryLayoutEnv`) and wrapper envs by unwrapping.
-    engine = getattr(env, "engine", env)
+    leg_host = legend_ax if legend_ax is not None else ax
+    proxies = _legend_proxies()
+    leg = leg_host.legend(handles=proxies, loc="upper left", title=title, framealpha=0.85)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.set_xlim(0, engine.grid_width)
-    ax.set_ylim(0, engine.grid_height)
-    ax.set_aspect("equal")
-    ax.set_title("FactoryLayoutEnv")
+    # Make both legend TEXT and HANDLE clickable. (Users often click the color box/line.)
+    legend_artist_to_key: dict[Any, str] = {}
+    keys = [str(p.get_label()) for p in proxies]
 
-    # ---- build all artists (default ON; toggles control visibility) ----
-    zone_artists: dict[str, list[Any]] = {"weight": [], "dry": [], "height": []}
+    # Text entries
+    for i, text in enumerate(leg.get_texts()):
+        k = str(text.get_text())
+        text.set_picker(10)  # larger pick radius than default
+        legend_artist_to_key[text] = k
+        try:
+            text.set_alpha(1.0 if bool(vis.get(k, True)) else 0.35)
+        except Exception:
+            pass
+
+    # Handle entries (patch/line/etc)
+    try:
+        handles = list(getattr(leg, "legend_handles", []))
+        for i, h in enumerate(handles):
+            if i >= len(keys):
+                break
+            k = keys[i]
+            try:
+                h.set_picker(10)
+            except Exception:
+                try:
+                    h.set_picker(True)
+                except Exception:
+                    pass
+            legend_artist_to_key[h] = k
+    except Exception:
+        pass
+
+    state = connect_once_state if connect_once_state is not None else {}
+    state["groups"] = groups
+    state["legend_artist_to_key"] = legend_artist_to_key
+    state["vis"] = vis
+
+    if connect_once_state is None:
+        def _on_pick(event) -> None:
+            artist = getattr(event, "artist", None)
+            key = state.get("legend_artist_to_key", {}).get(artist, None)
+            if key is None:
+                return
+            group = state.get("groups", {}).get(key, [])
+            # Toggle state even if group is empty, so the legend alpha stays consistent.
+            cur = bool(state.get("vis", {}).get(key, True))
+            state["vis"][key] = not cur
+            _set_visible_group(group, not cur)
+            try:
+                artist.set_alpha(1.0 if not cur else 0.35)
+            except Exception:
+                pass
+            fig.canvas.draw_idle()
+
+        fig.canvas.mpl_connect("pick_event", _on_pick)
+
+    return state
+
+
+def _draw_layout_layers(
+    *,
+    ax: plt.Axes,
+    engine: Any,
+    candidate_set: Optional[CandidateSet] = None,
+) -> dict[str, list[Any]]:
+    """Draw the same base layers used by plot_layout (zones/masks/layout/flow/score/candidates)."""
+    zone_artists: dict[str, list[Any]] = {"weight": [], "dry": [], "height": [], "placement": []}
     misc_artists: dict[str, list[Any]] = {
         "forbidden": [],
-        "column": [],
         "invalid_mask": [],
         "clearance_mask": [],
         "flow": [],
@@ -84,7 +218,7 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
             t.set_visible(True)
             zone_artists[kind].append(t)
 
-    # weight_areas: list[{rect, value}]
+    # zones
     if hasattr(engine, "weight_areas") and isinstance(getattr(engine, "weight_areas"), list):
         for a in getattr(engine, "weight_areas"):
             if not isinstance(a, dict):
@@ -104,7 +238,6 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
                 label=label,
             )
 
-    # dry_areas: list[{rect, value}]  (value is the required minimum; reverse inequality in env)
     if hasattr(engine, "dry_areas") and isinstance(getattr(engine, "dry_areas"), list):
         for a in getattr(engine, "dry_areas"):
             if not isinstance(a, dict):
@@ -124,7 +257,6 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
                 label=label,
             )
 
-    # height_areas: list[{rect, value}]
     if hasattr(engine, "height_areas") and isinstance(getattr(engine, "height_areas"), list):
         for a in getattr(engine, "height_areas"):
             if not isinstance(a, dict):
@@ -144,33 +276,52 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
                 label=label,
             )
 
-    # masks (start hidden)
-    mf = _plot_mask(ax, engine.forbidden_mask, color="red", alpha=0.15)
+    # placement_areas: named areas that groups can be restricted to
+    if hasattr(engine, "placement_areas") and isinstance(getattr(engine, "placement_areas"), list):
+        for a in getattr(engine, "placement_areas"):
+            if not isinstance(a, dict):
+                continue
+            rect = a.get("rect", None)
+            aid = a.get("id", None)
+            if rect is None:
+                continue
+            label = str(aid) if aid is not None else None
+            _add_zone_rect(
+                rect=rect,
+                kind="placement",
+                edgecolor="#1e90ff",
+                facecolor="#1e90ff",
+                alpha=0.12,
+                linestyle="-.",
+                label=label,
+            )
+
+    # masks
+    mf = _plot_mask(ax, getattr(engine, "forbidden_mask", None), color="red", alpha=0.15)
     if mf is not None:
         mf.set_visible(True)
         misc_artists["forbidden"].append(mf)
-    mc = _plot_mask(ax, engine.column_mask, color="blue", alpha=0.15)
-    if mc is not None:
-        mc.set_visible(True)
-        misc_artists["column"].append(mc)
 
-    # invalid/clearance masks (engine-internal, start visible; toggled via legend)
+    # engine internal masks (start hidden)
     inv = getattr(engine, "_invalid", None)
     if inv is not None:
-        mi = _plot_mask(ax, inv, color="#8b0000", alpha=1)  # dark red
+        mi = _plot_mask(ax, inv, color="#8b0000", alpha=1)
         if mi is not None:
             mi.set_visible(False)
             misc_artists["invalid_mask"].append(mi)
 
+    # clearance-only ring
     clr = getattr(engine, "_clear_invalid", None)
-    if clr is not None:
-        mc2 = _plot_mask(ax, clr, color="#ff6b6b", alpha=1)  # light red
+    occ = getattr(engine, "_occ_invalid", None)
+    clr_vis = (clr & (~occ)) if (clr is not None and occ is not None) else clr
+    if clr_vis is not None:
+        mc2 = _plot_mask(ax, clr_vis, color="#ff6b6b", alpha=1)
         if mc2 is not None:
             mc2.set_visible(False)
             misc_artists["clearance_mask"].append(mc2)
 
-    # Placed rects.
-    for gid in engine.placed:
+    # placed rects/labels
+    for gid in getattr(engine, "placed", []):
         x_bl, y_bl, rot = engine.positions[gid]
         group = engine.groups[gid]
         w, h = engine.rotated_size(group, rot)
@@ -187,14 +338,11 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
         cx, cy = engine.pose_center(gid)
         ax.text(cx, cy, str(gid), ha="center", va="center", fontsize=8)
 
-    # candidates (start hidden): visualize candidates from CandidateSet
+    # candidates (optional; caller may render their own)
     if candidate_set is not None:
         meta = candidate_set.meta or {}
-        # As of BL-integer unification, CandidateSet.xyrot is always interpreted as
-        # (x_bl, y_bl, rot). We need `gid` to convert BL -> center for plotting.
         gid = getattr(candidate_set, "gid", None)
         if gid is None:
-            # Backward-compat: allow passing gid through meta for older call sites.
             gid = meta.get("gid", None)
         xyrot = candidate_set.xyrot[candidate_set.mask]
         if int(xyrot.shape[0]) > 0:
@@ -210,7 +358,7 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
             sc.set_visible(True)
             misc_artists["candidates"].append(sc)
 
-    # flow overlay (start hidden)
+    # flow overlay
     flow_art = _plot_flow_overlay(ax, engine)
     for a in flow_art:
         try:
@@ -219,32 +367,23 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
             pass
     misc_artists["flow"].extend(flow_art)
 
-    # score overlay (start hidden)
+    # score overlay
     score = engine.cal_obj()
     score_text = ax.text(
-            0.01,
-            0.99,
-            f"cost={score:.3f}",
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=9,
-            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7),
-        )
+        0.01,
+        0.99,
+        f"cost={score:.3f}",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7),
+    )
     score_text.set_visible(True)
     misc_artists["score"].append(score_text)
 
-    # ---- legend click toggles (preferred UI) ----
-    def _set_visible_group(group: list[Any], v: bool) -> None:
-        for a in group:
-            try:
-                a.set_visible(bool(v))
-            except Exception:
-                pass
-
-    groups: dict[str, list[Any]] = {
+    return {
         "forbidden_mask": misc_artists["forbidden"],
-        "column_mask": misc_artists["column"],
         "invalid_mask": misc_artists["invalid_mask"],
         "clearance_mask": misc_artists["clearance_mask"],
         "flow": misc_artists["flow"],
@@ -253,46 +392,226 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
         "weight_zones": zone_artists["weight"],
         "dry_zones": zone_artists["dry"],
         "height_zones": zone_artists["height"],
+        "placement_zones": zone_artists["placement"],
     }
 
-    # Proxies for a clean legend (click to toggle).
-    proxies: list[Any] = [
-        patches.Patch(facecolor="red", edgecolor="red", alpha=0.15, label="forbidden_mask"),
-        patches.Patch(facecolor="blue", edgecolor="blue", alpha=0.15, label="column_mask"),
-        patches.Patch(facecolor="#8b0000", edgecolor="#8b0000", alpha=0.10, label="invalid_mask"),
-        patches.Patch(facecolor="#ff6b6b", edgecolor="#ff6b6b", alpha=0.10, label="clearance_mask"),
-        Line2D([0], [0], color="blue", lw=1.5, alpha=0.3, label="flow"),
-        Line2D([0], [0], color="black", lw=0.0, marker="s", markersize=8, label="score"),
-        Line2D([0], [0], color="green", lw=0.0, marker="o", markersize=6, alpha=0.65, label="candidates"),
-        patches.Patch(facecolor="#1f77b4", edgecolor="#1f77b4", alpha=0.08, label="weight_zones"),
-        patches.Patch(facecolor="#2ca02c", edgecolor="#2ca02c", alpha=0.06, label="dry_zones"),
-        patches.Patch(facecolor="#7f7f7f", edgecolor="#7f7f7f", alpha=0.04, label="height_zones"),
-    ]
-    leg = ax.legend(handles=proxies, loc="upper right", title="Click legend to toggle", framealpha=0.85)
-    # Make legend entries clickable.
-    legend_artist_to_key: dict[Any, str] = {}
-    for text in leg.get_texts():
-        text.set_picker(True)
-        legend_artist_to_key[text] = str(text.get_text())
 
-    def _on_pick(event) -> None:
-        artist = getattr(event, "artist", None)
-        key = legend_artist_to_key.get(artist, None)
-        if key is None:
-            return
-        group = groups.get(key, [])
-        current = bool(group[0].get_visible()) if group and hasattr(group[0], "get_visible") else False
-        _set_visible_group(group, not current)
-        # also reflect state on legend alpha
-        try:
-            artist.set_alpha(1.0 if not current else 0.35)
-        except Exception:
-            pass
-        fig.canvas.draw_idle()
+def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> None:
+    """Interactive viewer (dynamic toggles only).
 
-    fig.canvas.mpl_connect("pick_event", _on_pick)
+    - No save_path/show_* args here on purpose: use `save_layout(...)` for saving.
+    - This function always opens a window and lets you toggle layers via CheckButtons.
+    """
+    # Support both engine (`FactoryLayoutEnv`) and wrapper envs by unwrapping.
+    engine = getattr(env, "engine", env)
+
+    # Keep legend outside the layout area (separate axis on the right).
+    fig = plt.figure(figsize=(12, 6))
+    gs = fig.add_gridspec(nrows=1, ncols=2, width_ratios=[20, 5], wspace=0.05)
+    ax = fig.add_subplot(gs[0, 0])
+    ax_leg = fig.add_subplot(gs[0, 1])
+    ax_leg.axis("off")
+    ax.set_xlim(0, engine.grid_width)
+    ax.set_ylim(0, engine.grid_height)
+    ax.set_aspect("equal")
+    ax.set_title("FactoryLayoutEnv")
+
+    groups = _draw_layout_layers(ax=ax, engine=engine, candidate_set=candidate_set)
+    layer_vis = _default_layer_visibility()
+    _apply_layer_visibility(groups, layer_vis)
+    _install_click_legend(fig=fig, ax=ax, groups=groups, vis=layer_vis, legend_ax=ax_leg)
 
     plt.tight_layout()
+    plt.show()
+
+
+def browse_steps(
+    env: Any,
+    *,
+    frames: list[StepFrame],
+    title: str = "Inference browser (←/→ to navigate, q to quit)",
+    cmap: str = "RdYlGn",
+    point_size: float = 18.0,
+    selected_point_size: float = 90.0,
+    selected_edge_width: float = 2.5,
+    max_points: Optional[int] = None,
+) -> None:
+    """Browse step-by-step candidate policies with a consistent scatter visualization.
+
+    - Candidates are plotted as scatter points colored by `scores`.
+    - Selected action is highlighted with a bold outline.
+    - Uses wrapper snapshot API: env.set_snapshot(frame.snapshot).
+    """
+    if not frames:
+        raise ValueError("browse_steps: frames is empty")
+
+    # Support wrapper envs by unwrapping engine.
+    wrapper = env
+    engine = getattr(env, "engine", env)
+    if not hasattr(wrapper, "set_snapshot"):
+        raise ValueError("browse_steps requires a wrapper env with set_snapshot(get_snapshot()) support.")
+
+    # Fixed layout so axes don't shrink when navigating:
+    # - main axis: layout + scatter
+    # - right axis: colorbar
+    # - far-right axis: clickable legend (outside layout)
+    # - bottom axis: info panel (outside plot area)
+    fig = plt.figure(figsize=(13, 7))
+    gs = fig.add_gridspec(
+        nrows=2,
+        ncols=3,
+        height_ratios=[12, 2],
+        width_ratios=[20, 1, 5],
+        wspace=0.15,
+        hspace=0.15,
+    )
+    ax = fig.add_subplot(gs[0, 0])
+    cax = fig.add_subplot(gs[0, 1])
+    ax_leg = fig.add_subplot(gs[0, 2])
+    ax_leg.axis("off")
+    ax_info = fig.add_subplot(gs[1, :])
+    ax_info.axis("off")
+
+    ax.set_xlim(0, engine.grid_width)
+    ax.set_ylim(0, engine.grid_height)
+    ax.set_aspect("equal")
+    ax.set_title(title)
+
+    # persistent artists (updated in-place)
+    sc = None
+    sc_sel = None
+    cbar = None
+    info_text = ax_info.text(
+        0.01,
+        0.5,
+        "",
+        transform=ax_info.transAxes,
+        ha="left",
+        va="center",
+        fontsize=10,
+        family="monospace",
+    )
+
+    cur = {"idx": 0}
+    layer_vis = _default_layer_visibility()
+    legend_state: dict[str, Any] | None = None
+
+    def _frame_to_xy(frame: StepFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[float, float]]:
+        cand = frame.candidates
+        gid = cand.gid
+        if gid is None:
+            raise ValueError("CandidateSet.gid is required for BL->center conversion.")
+        mask = cand.mask.detach().cpu().numpy().astype(bool)
+        xyrot = cand.xyrot.detach().cpu().numpy()
+        scores = np.asarray(frame.scores, dtype=np.float32)
+        if scores.shape[0] != xyrot.shape[0]:
+            raise ValueError(f"scores length {scores.shape[0]} != candidates {xyrot.shape[0]}")
+
+        idxs = np.where(mask)[0]
+        if max_points is not None and idxs.shape[0] > int(max_points):
+            idxs = idxs[: int(max_points)]
+
+        xs: list[float] = []
+        ys: list[float] = []
+        cs: list[float] = []
+        for k in idxs.tolist():
+            x_bl, y_bl, rot = xyrot[k].tolist()
+            cx, cy = engine.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(rot))
+            xs.append(float(cx))
+            ys.append(float(cy))
+            cs.append(float(scores[k]))
+
+        # selected action point (even if invalid, we still try to draw it)
+        sel = int(frame.selected_action)
+        if sel < 0 or sel >= xyrot.shape[0]:
+            sel_xy = (0.0, 0.0)
+        else:
+            x_bl, y_bl, rot = xyrot[sel].tolist()
+            cx, cy = engine.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(rot))
+            sel_xy = (float(cx), float(cy))
+
+        return np.asarray(xs), np.asarray(ys), np.asarray(cs, dtype=np.float32), sel_xy
+
+    def _render(idx: int) -> None:
+        nonlocal sc, sc_sel, cbar
+        nonlocal legend_state
+        idx = int(max(0, min(len(frames) - 1, idx)))
+        cur["idx"] = idx
+        f = frames[idx]
+
+        # restore snapshot for this frame
+        wrapper.set_snapshot(f.snapshot)  # type: ignore[attr-defined]
+
+        ax.clear()
+        ax.set_xlim(0, engine.grid_width)
+        ax.set_ylim(0, engine.grid_height)
+        ax.set_aspect("equal")
+        ax.set_title(title + f"  [step {f.step_idx}/{frames[-1].step_idx}]")
+
+        ax_leg.clear()
+        ax_leg.axis("off")
+
+        # Draw the same base UI layers as plot_layout (zones/masks/layout/flow/score),
+        # then overlay policy-colored candidates on top.
+        groups = _draw_layout_layers(ax=ax, engine=engine, candidate_set=None)
+        xs, ys, cs, (sx, sy) = _frame_to_xy(f)
+        sc = ax.scatter(xs, ys, s=float(point_size), c=cs, cmap=cmap, alpha=0.85, linewidths=0.0)
+        sc_sel = ax.scatter(
+            [sx],
+            [sy],
+            s=float(selected_point_size),
+            facecolors="none",
+            edgecolors="#1f77b4",  # blue
+            linewidths=float(selected_edge_width),
+        )
+        groups["candidates"].extend([sc, sc_sel])
+        _apply_layer_visibility(groups, layer_vis)
+        legend_state = _install_click_legend(
+            fig=fig,
+            ax=ax,
+            groups=groups,
+            vis=layer_vis,
+            legend_ax=ax_leg,
+            connect_once_state=legend_state,
+        )
+
+        # colorbar (fixed axis; no layout shrink). Create once, then update.
+        if cbar is None:
+            cbar = fig.colorbar(sc, cax=cax)
+            cbar.set_label("policy score / prob")
+        else:
+            cbar.update_normal(sc)
+
+        # info panel outside the plot
+        sel_score = float(f.scores[int(f.selected_action)]) if 0 <= int(f.selected_action) < len(f.scores) else float("nan")
+        info_text.set_text(
+            " | ".join(
+                [
+                    f"step={f.step_idx}",
+                    f"cost={f.cost:.3f}",
+                    f"value={f.value:.6f}",
+                    f"selected_action={int(f.selected_action)}",
+                    f"selected_policy={sel_score:.6f}",
+                    f"valid={int(f.candidates.mask.to(torch.int64).sum().item())}",
+                ]
+            )
+        )
+
+        fig.canvas.draw_idle()
+
+    def _on_key(event) -> None:
+        if event.key in ("q", "escape"):
+            plt.close(fig)
+            return
+        if event.key in ("right", "d", "space"):
+            _render(cur["idx"] + 1)
+            return
+        if event.key in ("left", "a"):
+            _render(cur["idx"] - 1)
+            return
+
+    fig.canvas.mpl_connect("key_press_event", _on_key)
+    _render(0)
     plt.show()
     plt.close(fig)
 
@@ -418,7 +737,6 @@ def save_layout(
 
     if show_masks:
         _plot_mask(ax, engine.forbidden_mask, color="red", alpha=0.15)
-        _plot_mask(ax, engine.column_mask, color="blue", alpha=0.15)
 
     for gid in engine.placed:
         x_bl, y_bl, rot = engine.positions[gid]
@@ -571,10 +889,8 @@ if __name__ == "__main__":
     # - Shows zone overlays and interactive toggles (show=True only).
     import torch
 
-    from actionspace.coarse import CoarseSelector
-    from actionspace.topk import TopKSelector
     from envs.wrappers.alphachip import AlphaChipWrapperEnv
-    from envs.wrappers.topk import TopKWrapperEnv
+    from envs.wrappers.greedy import GreedyWrapperEnv
     from envs.env import FacilityGroup, FactoryLayoutEnv
 
     dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -630,15 +946,14 @@ if __name__ == "__main__":
     )
 
     # ---- 1) Coarse wrapper demo ----
+    # For coarse, we just visualize the current layout (candidate visualization via decode is omitted in demo).
     env1 = AlphaChipWrapperEnv(engine=engine, coarse_grid=32, rot=0)
     _obs1, _ = env1.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
-    coarse_candidates = CoarseSelector(coarse_grid=32, rot=0).build(engine)
-    # Interactive viewer: dynamic toggles control masks/flow/score/zones.
-    plot_layout(env1, candidate_set=coarse_candidates)
+    plot_layout(env1, candidate_set=None)
     plot_flow_graph(env1)
 
-    # ---- 2) TopK wrapper demo ----
-    env2 = TopKWrapperEnv(
+    # ---- 2) Greedy(TopK) wrapper demo ----
+    env2 = GreedyWrapperEnv(
         engine=engine,
         k=70,
         scan_step=5.0,
@@ -650,7 +965,11 @@ if __name__ == "__main__":
         random_seed=7,
     )
     _obs2, _ = env2.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
-    topk_candidates = TopKSelector(k=70, scan_step=5.0, quant_step=5.0, random_seed=7).build(engine)
-    plot_layout(env2, candidate_set=topk_candidates)
+    # Greedy(TopK) wrapper already builds candidates; use obs-provided (decoded) candidates for plotting.
+    topk_obs, _ = env2.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
+    cand = None
+    if isinstance(topk_obs, dict) and ("action_mask" in topk_obs) and ("action_xyrot" in topk_obs):
+        cand = CandidateSet(xyrot=topk_obs["action_xyrot"], mask=topk_obs["action_mask"], gid=engine.remaining[0] if engine.remaining else None)
+    plot_layout(env2, candidate_set=cand)
     plot_flow_graph(env2)
 

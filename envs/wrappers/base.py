@@ -39,3 +39,24 @@ class BaseWrapper(gym.Env, ABC):
         self.mask = self.create_mask()
         return self._build_obs(), info
 
+    # ---- snapshot api (for wrapped search/MCTS) ----
+    def get_snapshot(self) -> Dict[str, object]:
+        """Return wrapper+engine snapshot for deterministic restore in search algorithms."""
+        snap: Dict[str, object] = {"engine": self.engine.get_snapshot()}
+        if isinstance(self.mask, torch.Tensor):
+            snap["mask"] = self.mask.clone()
+        else:
+            snap["mask"] = None
+        return snap
+
+    def set_snapshot(self, snapshot: Dict[str, object]) -> None:
+        """Restore snapshot produced by `get_snapshot`."""
+        eng = snapshot.get("engine", None)
+        if isinstance(eng, dict):
+            self.engine.set_snapshot(eng)
+        m = snapshot.get("mask", None)
+        if isinstance(m, torch.Tensor):
+            self.mask = m.to(device=self.device, dtype=torch.bool).clone()
+        else:
+            self.mask = None
+

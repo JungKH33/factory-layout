@@ -129,6 +129,8 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
             facility_clearance_right=_to_int(g.get("facility_clearance_right", 0)),
             facility_clearance_bottom=_to_int(g.get("facility_clearance_bottom", 0)),
             facility_clearance_top=_to_int(g.get("facility_clearance_top", 0)),
+            # Placement area constraint: list of area IDs, or None for no restriction.
+            allowed_areas=g.get("allowed_areas", None),
         )
 
     flow_raw = data.get("flow", {})
@@ -146,14 +148,11 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         forbidden_mask = _torch_forbidden_mask_from_rects(
             grid_w, grid_h, masks["forbidden_rects"], device=dev
         )
-    column_mask = None
-    if "column_rects" in masks:
-        column_mask = _torch_forbidden_mask_from_rects(grid_w, grid_h, masks["column_rects"], device=dev)
-
     zones = data.get("zones", {})
     weight_areas: List[Dict[str, Any]] = list(zones.get("weight_areas", [])) if isinstance(zones, dict) else []
     dry_areas: List[Dict[str, Any]] = list(zones.get("dry_areas", [])) if isinstance(zones, dict) else []
     height_areas: List[Dict[str, Any]] = list(zones.get("height_areas", [])) if isinstance(zones, dict) else []
+    placement_areas: List[Dict[str, Any]] = list(zones.get("placement_areas", [])) if isinstance(zones, dict) else []
 
     # NOTE: New schema (no backward-compat): areas are dicts with {"rect": [x0,y0,x1,y1], "value": float}
     for name, areas in [("weight_areas", weight_areas), ("dry_areas", dry_areas), ("height_areas", height_areas)]:
@@ -165,6 +164,13 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
             if "rect" not in a or "value" not in a:
                 raise ValueError(f"zones.{name}[{i}] must contain keys 'rect' and 'value'")
 
+    # placement_areas: [{"id": str, "rect": [x0,y0,x1,y1]}, ...]
+    for i, a in enumerate(placement_areas):
+        if not isinstance(a, dict):
+            raise ValueError(f"zones.placement_areas[{i}] must be an object with keys id/rect")
+        if "id" not in a or "rect" not in a:
+            raise ValueError(f"zones.placement_areas[{i}] must contain keys 'id' and 'rect'")
+
     env = FactoryLayoutEnv(
         grid_width=grid_w,
         grid_height=grid_h,
@@ -174,7 +180,6 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         reward_scale=float(env_cfg.get("reward_scale", 100.0)),
         penalty_scale=float(env_cfg.get("penalty_scale", 30.0)),
         forbidden_mask=forbidden_mask,
-        column_mask=column_mask,
         # Optional defaults (if omitted, behave as "no constraint" by default):
         # - weight/height: +inf => never invalid by (map < facility_value)
         # - dry (reverse): -inf => never invalid by (map > facility_value)
@@ -184,6 +189,7 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         weight_areas=weight_areas,
         height_areas=height_areas,
         dry_areas=dry_areas,
+        placement_areas=placement_areas,
         device=dev,
         log=bool(env_cfg.get("log", False)),
     )
@@ -210,15 +216,6 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
     return LoadedEnv(env=env, reset_kwargs=reset_kwargs)
 
 
-@dataclass(frozen=True)
-class LoadedEnvOld:
-    """Result of loading a legacy candidate env from a JSON spec."""
-
-    env: Any
-    reset_kwargs: Dict[str, Any]
-
-
-def load_env_old(json_path: str) -> LoadedEnvOld:
     """Load a FactoryLayoutEnvOld (legacy) from a JSON spec file."""
     if FactoryLayoutEnvOld is None or FacilityGroupOld is None:
         raise RuntimeError("load_env_old() is unavailable because envs/env_old.py is missing.")
@@ -260,9 +257,6 @@ def load_env_old(json_path: str) -> LoadedEnvOld:
     forbidden_mask = None
     if "forbidden_rects" in masks:
         forbidden_mask = _mask_from_forbidden_rects(grid_w, grid_h, masks["forbidden_rects"])
-    column_mask = None
-    if "column_rects" in masks:
-        column_mask = _mask_from_forbidden_rects(grid_w, grid_h, masks["column_rects"])
     dry_mask = None
     if "dry_forbidden_rects" in masks:
         dry_mask = _mask_from_forbidden_rects(grid_w, grid_h, masks["dry_forbidden_rects"])
@@ -281,7 +275,6 @@ def load_env_old(json_path: str) -> LoadedEnvOld:
         reward_scale=float(env_cfg.get("reward_scale", 100.0)),
         penalty_scale=float(env_cfg.get("penalty_scale", 30.0)),
         forbidden_mask=forbidden_mask,
-        column_mask=column_mask,
         dry_mask=dry_mask,
         weight_mask=weight_mask,
         log=bool(env_cfg.get("log", False)),

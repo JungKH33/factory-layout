@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -39,16 +40,18 @@ class FacilityGroup:
     facility_clearance_right: int = 0
     facility_clearance_bottom: int = 0
     facility_clearance_top: int = 0
+    # Placement area constraint: list of placement_area IDs this group is allowed to be placed in.
+    # None means no restriction (can be placed anywhere subject to other constraints).
+    allowed_areas: Optional[List[str]] = None
 
 
 class FactoryLayoutEnv(gym.Env):
-    """Tensor-first Gymnasium env for AlphaChip-style coarse-cell placement.
+    """Tensor-first Gymnasium env for factory layout placement.
 
-    Key ideas:
-    - action is 1D index over coarse grid cells: Discrete(G*G) (decoder-defined)
-    - decoding (cell -> center x,y, rot=0) is owned by a decoder object
-    - mask is computed by decoder from env's cached invalid_map + next_group size
-    - observations are torch.Tensors (torchrl-friendly)
+    Design notes:
+    - The engine owns placement feasibility, constraints, and objective evaluation.
+    - Action semantics / candidate generation are owned by wrapper envs.
+    - Observations are torch.Tensors (GPU-friendly; TorchRL-compatible).
     """
 
     metadata = {"render_modes": []}
@@ -62,7 +65,6 @@ class FactoryLayoutEnv(gym.Env):
         group_flow: Optional[Dict[GroupId, Dict[GroupId, float]]] = None,
         # Masks are torch.BoolTensor[H,W] where True means forbidden/invalid.
         forbidden_mask: Optional[torch.Tensor] = None,
-        column_mask: Optional[torch.Tensor] = None,
         # --- zone/constraint configs (optional; fully map-based) ---
         # For each constraint, we define a per-cell float map:
         # - map is initialized from env.default_*
@@ -76,10 +78,11 @@ class FactoryLayoutEnv(gym.Env):
         weight_areas: Optional[List[Dict[str, Any]]] = None,  # [{"rect":[x0,y0,x1,y1], "value": float}, ...]
         height_areas: Optional[List[Dict[str, Any]]] = None,  # [{"rect":[...], "value": float}, ...]
         dry_areas: Optional[List[Dict[str, Any]]] = None,  # [{"rect":[...], "value": float}, ...]
+        placement_areas: Optional[List[Dict[str, Any]]] = None,  # [{"id": str, "rect":[x0,y0,x1,y1]}, ...]
         device: Optional[torch.device] = None,
         max_steps: Optional[int] = None,
         reward_scale: float = 100.0,
-        penalty_scale: float = 30.0,
+        penalty_scale: float = 5000.0,
         log: bool = False,
     ):
         super().__init__()
@@ -88,13 +91,13 @@ class FactoryLayoutEnv(gym.Env):
         self.groups = dict(groups)
         self.group_flow = group_flow or {}
         self.forbidden_mask = forbidden_mask.to(torch.bool) if forbidden_mask is not None else None
-        self.column_mask = column_mask.to(torch.bool) if column_mask is not None else None
         self.default_weight = float(default_weight)
         self.default_height = float(default_height)
         self.default_dry = float(default_dry)
         self.weight_areas = list(weight_areas or [])
         self.height_areas = list(height_areas or [])
         self.dry_areas = list(dry_areas or [])
+        self.placement_areas = list(placement_areas or [])
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
         self.max_steps = max_steps
         self.reward_scale = float(reward_scale)
@@ -105,22 +108,9 @@ class FactoryLayoutEnv(gym.Env):
         self.action_space = gym.spaces.Discrete(1)
         self.observation_space = gym.spaces.Dict({})
 
-        # --- static graph cache (obs will include these tensors every step) ---
+        # --- static id/index mapping (useful across wrappers) ---
         self.node_ids: List[GroupId] = sorted(self.groups.keys(), key=lambda x: str(x))
         self.gid_to_idx: Dict[GroupId, int] = {gid: i for i, gid in enumerate(self.node_ids)}
-        self._edge_index, self._edge_attr = self._build_graph_static()
-
-        # --- node features cache (in-place updates per placement) ---
-        # Minimal 8-dim feature (dims will be refined later):
-        # [w_norm, h_norm, placed, x_norm, y_norm, rot_norm, 0, 0]
-        self._node_feat = torch.zeros((len(self.node_ids), 8), dtype=torch.float32, device=self.device)
-        for gid, i in self.gid_to_idx.items():
-            gg = self.groups[gid]
-            self._node_feat[i, 0] = float(gg.width) / float(self.grid_width)
-            self._node_feat[i, 1] = float(gg.height) / float(self.grid_height)
-
-        # --- metadata cache ---
-        self._netlist_metadata = torch.zeros((12,), dtype=torch.float32, device=self.device)
 
         # NOTE: positions store (x_bl, y_bl, rot) where (x_bl,y_bl) is the bottom-left
         # of the rotated AABB footprint, in integer grid-cell coordinates.
@@ -142,6 +132,9 @@ class FactoryLayoutEnv(gym.Env):
         self._weight_map = self._build_value_map(self.default_weight, self.weight_areas)
         self._height_map = self._build_value_map(self.default_height, self.height_areas)
         self._dry_map = self._build_value_map(self.default_dry, self.dry_areas)
+
+        # Placement area masks: id → bool[H,W] where True = inside this area.
+        self._placement_area_masks: Dict[str, torch.Tensor] = self._build_placement_area_masks()
 
         # Ensure invalid is consistent even before first reset.
         self._recompute_invalid()
@@ -173,6 +166,29 @@ class FactoryLayoutEnv(gym.Env):
             if x1 > x0 and y1 > y0:
                 m[y0:y1, x0:x1] = float(v)
         return m
+
+    def _build_placement_area_masks(self) -> Dict[str, torch.Tensor]:
+        """Build bool[H,W] masks for each placement_area. True = inside the area."""
+        masks: Dict[str, torch.Tensor] = {}
+        for area in self.placement_areas:
+            if not isinstance(area, dict):
+                continue
+            aid = str(area.get("id", ""))
+            if not aid:
+                continue
+            rect = area.get("rect", None)
+            if rect is None:
+                continue
+            x0, y0, x1, y1 = rect
+            x0 = max(0, min(self.grid_width, int(x0)))
+            x1 = max(0, min(self.grid_width, int(x1)))
+            y0 = max(0, min(self.grid_height, int(y0)))
+            y1 = max(0, min(self.grid_height, int(y1)))
+            m = torch.zeros((self.grid_height, self.grid_width), dtype=torch.bool, device=self.device)
+            if x1 > x0 and y1 > y0:
+                m[y0:y1, x0:x1] = True
+            masks[aid] = m
+        return masks
 
     def _clearance_lrtb(self, g: FacilityGroup, rot: int) -> Tuple[float, float, float, float]:
         """Return (cL,cR,cB,cT) clearance for a group, accounting for rotation.
@@ -214,6 +230,17 @@ class FactoryLayoutEnv(gym.Env):
         self._zone_invalid |= (self._height_map < float(g.facility_height))
         self._zone_invalid |= (self._dry_map > float(g.facility_dry))
 
+        # Placement area constraint: if group has allowed_areas, invalidate outside those areas.
+        allowed = getattr(g, "allowed_areas", None)
+        if allowed is not None and len(allowed) > 0:
+            # Union of allowed placement area masks
+            allowed_mask = torch.zeros((self.grid_height, self.grid_width), dtype=torch.bool, device=self.device)
+            for aid in allowed:
+                if aid in self._placement_area_masks:
+                    allowed_mask |= self._placement_area_masks[aid]
+            # Invalidate everywhere outside the allowed areas
+            self._zone_invalid |= (~allowed_mask)
+
         self._recompute_invalid()
 
     def _zone_invalid_for_gid(self, gid: GroupId) -> torch.Tensor:
@@ -229,6 +256,15 @@ class FactoryLayoutEnv(gym.Env):
         z |= (self._weight_map < float(g.facility_weight))
         z |= (self._height_map < float(g.facility_height))
         z |= (self._dry_map > float(g.facility_dry))
+
+        # Placement area constraint
+        allowed = getattr(g, "allowed_areas", None)
+        if allowed is not None and len(allowed) > 0:
+            allowed_mask = torch.zeros((self.grid_height, self.grid_width), dtype=torch.bool, device=self.device)
+            for aid in allowed:
+                if aid in self._placement_area_masks:
+                    allowed_mask |= self._placement_area_masks[aid]
+            z |= (~allowed_mask)
 
         return z
 
@@ -363,33 +399,199 @@ class FactoryLayoutEnv(gym.Env):
         exi_dx, exi_dy = self.rotate_point(float(g.exi_rel_x), float(g.exi_rel_y), int(r))
         return (float(cx) + float(ent_dx), float(cy) + float(ent_dy), float(cx) + float(exi_dx), float(cy) + float(exi_dy))
 
-    def estimate_delta_obj(self, *, gid: GroupId, x: float, y: float, rot: int) -> float:
+    def estimate_delta_obj(self, *, gid: GroupId, x: object, y: object, rot: object):
         """Estimate *scaled* objective delta if placing `gid` at (x,y,rot).
 
-        Behavior is aligned to `env.py`:
-        - If not placeable -> return 0.0 (caller can still rank/ignore).
-        - Temporarily place using `try_place`, compute delta, then restore.
+        - Accepts scalar (int/float) or batched torch.Tensor[M] inputs.
+        - Always uses the same batched math path (no per-candidate is_placeable checks for speed).
+
+        Delta matches current `cal_obj()` definition:
+        - Flow: EXIT(src) -> ENTRY(dst) directed L1 with IO offsets (both outgoing and incoming edges affected by new gid).
+        - Compactness: bbox HPWL = 0.5*(dx+dy).
         """
-        x_bl = self._as_int(x, name="x")
-        y_bl = self._as_int(y, name="y")
-        r = self._norm_rot(int(rot))
-        if not self.is_placeable(gid, float(x_bl), float(y_bl), int(r)):
-            return 0.0
-        cost_prev = float(self.cal_obj())
-        prev_state = (dict(self.positions), set(self.placed), list(self.remaining))
-        try:
-            self.try_place(gid, float(x_bl), float(y_bl), int(r))
-            cost_new = float(self.cal_obj())
-        finally:
-            self.positions, self.placed, self.remaining = prev_state
-        return (cost_new - cost_prev) / float(self.reward_scale)
+        scalar_input = not (torch.is_tensor(x) or torch.is_tensor(y) or torch.is_tensor(rot))
+        if gid not in self.groups:
+            raise KeyError(f"estimate_delta_obj(batch): unknown gid={gid!r}")
+        if scalar_input:
+            x = torch.tensor([float(x)], dtype=torch.float32, device=self.device)
+            y = torch.tensor([float(y)], dtype=torch.float32, device=self.device)
+            rot = torch.tensor([int(rot)], dtype=torch.long, device=self.device)
+        if not (torch.is_tensor(x) and torch.is_tensor(y) and torch.is_tensor(rot)):
+            raise TypeError("estimate_delta_obj(batch): x,y,rot must all be torch.Tensor (or all scalars)")
+
+        x_bl = x.to(device=self.device).view(-1)
+        y_bl = y.to(device=self.device).view(-1)
+        r = rot.to(device=self.device).view(-1).to(dtype=torch.long)
+        M = int(x_bl.numel())
+        if int(y_bl.numel()) != M or int(r.numel()) != M:
+            raise ValueError("estimate_delta_obj(batch): x,y,rot must have same length")
+
+        # Normalize rotations to {0,90,180,270}
+        r = torch.remainder(r, 360)
+        if torch.any((r % 90) != 0):
+            raise ValueError("estimate_delta_obj(batch): rot must be multiples of 90")
+
+        g = self.groups[gid]
+        w0 = float(g.width)
+        h0 = float(g.height)
+        is_swap = (r == 90) | (r == 270)
+        w = torch.where(is_swap, torch.full((M,), h0, device=self.device), torch.full((M,), w0, device=self.device))
+        h = torch.where(is_swap, torch.full((M,), w0, device=self.device), torch.full((M,), h0, device=self.device))
+
+        cx = x_bl.to(dtype=torch.float32) + w.to(dtype=torch.float32) * 0.5
+        cy = y_bl.to(dtype=torch.float32) + h.to(dtype=torch.float32) * 0.5
+
+        # Rotate IO offsets (vectorized)
+        ent_dx0 = float(g.ent_rel_x)
+        ent_dy0 = float(g.ent_rel_y)
+        exi_dx0 = float(g.exi_rel_x)
+        exi_dy0 = float(g.exi_rel_y)
+
+        r0 = (r == 0)
+        r90 = (r == 90)
+        r180 = (r == 180)
+        r270 = (r == 270)
+
+        ent_dx = torch.where(
+            r0,
+            torch.full((M,), ent_dx0, device=self.device),
+            torch.where(
+                r90,
+                torch.full((M,), ent_dy0, device=self.device),
+                torch.where(
+                    r180,
+                    torch.full((M,), -ent_dx0, device=self.device),
+                    torch.full((M,), -ent_dy0, device=self.device),
+                ),
+            ),
+        ).to(dtype=torch.float32)
+        ent_dy = torch.where(
+            r0,
+            torch.full((M,), ent_dy0, device=self.device),
+            torch.where(
+                r90,
+                torch.full((M,), -ent_dx0, device=self.device),
+                torch.where(
+                    r180,
+                    torch.full((M,), -ent_dy0, device=self.device),
+                    torch.full((M,), ent_dx0, device=self.device),
+                ),
+            ),
+        ).to(dtype=torch.float32)
+
+        exi_dx = torch.where(
+            r0,
+            torch.full((M,), exi_dx0, device=self.device),
+            torch.where(
+                r90,
+                torch.full((M,), exi_dy0, device=self.device),
+                torch.where(
+                    r180,
+                    torch.full((M,), -exi_dx0, device=self.device),
+                    torch.full((M,), -exi_dy0, device=self.device),
+                ),
+            ),
+        ).to(dtype=torch.float32)
+        exi_dy = torch.where(
+            r0,
+            torch.full((M,), exi_dy0, device=self.device),
+            torch.where(
+                r90,
+                torch.full((M,), -exi_dx0, device=self.device),
+                torch.where(
+                    r180,
+                    torch.full((M,), -exi_dy0, device=self.device),
+                    torch.full((M,), exi_dx0, device=self.device),
+                ),
+            ),
+        ).to(dtype=torch.float32)
+
+        cand_en_x = cx + ent_dx
+        cand_en_y = cy + ent_dy
+        cand_ex_x = cx + exi_dx
+        cand_ex_y = cy + exi_dy
+
+        # ---- Δflow: include outgoing (gid->p) and incoming (p->gid) edges for placed nodes ----
+        placed_nodes = list(self.placed)
+        if not placed_nodes:
+            delta_flow = torch.zeros((M,), dtype=torch.float32, device=self.device)
+        else:
+            en_p: List[Tuple[float, float]] = []
+            ex_p: List[Tuple[float, float]] = []
+            w_out: List[float] = []
+            w_in: List[float] = []
+            for p in placed_nodes:
+                enx, eny, exx, exy = self.compute_enex(p)
+                en_p.append((float(enx), float(eny)))
+                ex_p.append((float(exx), float(exy)))
+                w_out.append(float(self.group_flow.get(gid, {}).get(p, 0.0)))
+                w_in.append(float(self.group_flow.get(p, {}).get(gid, 0.0)))
+
+            en_p_xy = torch.tensor(en_p, dtype=torch.float32, device=self.device)  # [P,2]
+            ex_p_xy = torch.tensor(ex_p, dtype=torch.float32, device=self.device)  # [P,2]
+            w_out_t = torch.tensor(w_out, dtype=torch.float32, device=self.device).view(1, -1)  # [1,P]
+            w_in_t = torch.tensor(w_in, dtype=torch.float32, device=self.device).view(1, -1)  # [1,P]
+
+            # out: EXIT(gid) -> ENTRY(p)
+            dist_out = (cand_ex_x.view(-1, 1) - en_p_xy[:, 0].view(1, -1)).abs() + (
+                cand_ex_y.view(-1, 1) - en_p_xy[:, 1].view(1, -1)
+            ).abs()
+            # in: EXIT(p) -> ENTRY(gid)
+            dist_in = (ex_p_xy[:, 0].view(1, -1) - cand_en_x.view(-1, 1)).abs() + (
+                ex_p_xy[:, 1].view(1, -1) - cand_en_y.view(-1, 1)
+            ).abs()
+
+            delta_flow = (dist_out * w_out_t).sum(dim=1) + (dist_in * w_in_t).sum(dim=1)
+
+        # ---- Δcompactness: bbox HPWL change ----
+        if not self.placed:
+            cur_hpwl = torch.zeros((M,), dtype=torch.float32, device=self.device)
+            # hpwl for a single rectangle does not depend on position: 0.5*(w+h)
+            new_hpwl = 0.5 * (w.to(dtype=torch.float32) + h.to(dtype=torch.float32))
+            delta_comp = new_hpwl - cur_hpwl
+        else:
+            cur_min_x = float("inf")
+            cur_max_x = float("-inf")
+            cur_min_y = float("inf")
+            cur_max_y = float("-inf")
+            for pgid in self.placed:
+                px_bl, py_bl, prot = self.positions[pgid]
+                pw, ph = self.rotated_size(self.groups[pgid], prot)
+                cur_min_x = min(cur_min_x, float(px_bl))
+                cur_max_x = max(cur_max_x, float(px_bl) + float(pw))
+                cur_min_y = min(cur_min_y, float(py_bl))
+                cur_max_y = max(cur_max_y, float(py_bl) + float(ph))
+            cur_hpwl_scalar = 0.5 * ((cur_max_x - cur_min_x) + (cur_max_y - cur_min_y))
+
+            cur_min_x_t = torch.full((M,), float(cur_min_x), dtype=torch.float32, device=self.device)
+            cur_max_x_t = torch.full((M,), float(cur_max_x), dtype=torch.float32, device=self.device)
+            cur_min_y_t = torch.full((M,), float(cur_min_y), dtype=torch.float32, device=self.device)
+            cur_max_y_t = torch.full((M,), float(cur_max_y), dtype=torch.float32, device=self.device)
+
+            cand_min_x = x_bl.to(dtype=torch.float32)
+            cand_max_x = x_bl.to(dtype=torch.float32) + w.to(dtype=torch.float32)
+            cand_min_y = y_bl.to(dtype=torch.float32)
+            cand_max_y = y_bl.to(dtype=torch.float32) + h.to(dtype=torch.float32)
+
+            new_min_x = torch.minimum(cur_min_x_t, cand_min_x)
+            new_max_x = torch.maximum(cur_max_x_t, cand_max_x)
+            new_min_y = torch.minimum(cur_min_y_t, cand_min_y)
+            new_max_y = torch.maximum(cur_max_y_t, cand_max_y)
+            new_hpwl = 0.5 * ((new_max_x - new_min_x) + (new_max_y - new_min_y))
+            delta_comp = new_hpwl - float(cur_hpwl_scalar)
+
+        delta = (delta_flow + delta_comp) / float(self.reward_scale)
+        delta = delta.to(dtype=torch.float32)
+        if scalar_input:
+            return float(delta[0].item())
+        return delta
 
     def try_place(self, gid: GroupId, x: float, y: float, rot: int) -> bool:
         """Place a group if feasible; returns True on success.
 
         This mirrors `env.py` semantics (positions/placed/remaining only).
-        NOTE: Engine-internal caches (occ/invalid/node_feat) are NOT updated here.
-        Use `_apply_place(..., update_caches=True)` when you need cache consistency.
+        NOTE: Engine-internal cached maps are NOT updated here.
+        Use `_apply_place(..., update_caches=True)` when you need cached-map consistency.
         """
         x_bl = self._as_int(x, name="x")
         y_bl = self._as_int(y, name="y")
@@ -413,38 +615,9 @@ class FactoryLayoutEnv(gym.Env):
             self.remaining.remove(gid)
         if update_caches:
             self._paint_occupancy(gid, int(x_bl), int(y_bl), int(r))
-            idx = self.gid_to_idx.get(gid, None)
-            if idx is not None:
-                cx, cy = self.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(r))
-                self._node_feat[idx, 2] = 1.0
-                self._node_feat[idx, 3] = float(cx) / float(self.grid_width)
-                self._node_feat[idx, 4] = float(cy) / float(self.grid_height)
-                self._node_feat[idx, 5] = float(int(r) % 360) / 360.0
-
-    def _build_graph_static(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Build sparse graph tensors from group_flow.
-
-        Returns:
-          edge_index: int64 [2,E]
-          edge_attr: float32 [E,1]  (#nets/weight)
-        """
-        edges: List[List[int]] = []
-        attrs: List[List[float]] = []
-        for src, dsts in self.group_flow.items():
-            if src not in self.gid_to_idx:
-                continue
-            for dst, w in dsts.items():
-                if dst not in self.gid_to_idx:
-                    continue
-                edges.append([self.gid_to_idx[src], self.gid_to_idx[dst]])
-                attrs.append([float(w)])
-        if edges:
-            edge_index = torch.tensor(edges, dtype=torch.long, device=self.device).t().contiguous()
-            edge_attr = torch.tensor(attrs, dtype=torch.float32, device=self.device)
-        else:
-            edge_index = torch.zeros((2, 0), dtype=torch.long, device=self.device)
-            edge_attr = torch.zeros((0, 1), dtype=torch.float32, device=self.device)
-        return edge_index, edge_attr
+            # Keep zone invalid consistent for the *next* group after any real placement.
+            # This prevents stale `_zone_invalid` when callers use step_masked() (wrappers).
+            self._update_zone_invalid_for_next()
 
     # ---- feasibility / objective ----
     def is_placeable(self, gid: GroupId, x: float, y: float, rot: int) -> bool:
@@ -548,8 +721,6 @@ class FactoryLayoutEnv(gym.Env):
         inv = torch.zeros((self.grid_height, self.grid_width), dtype=torch.bool, device=self.device)
         if self.forbidden_mask is not None:
             inv |= self.forbidden_mask.to(self.device)
-        if self.column_mask is not None:
-            inv |= self.column_mask.to(self.device)
         return inv
 
     def _recompute_invalid(self) -> None:
@@ -583,22 +754,11 @@ class FactoryLayoutEnv(gym.Env):
     def _build_obs(self) -> Dict[str, torch.Tensor]:
         """Return *core* observation (model-agnostic).
 
-        Policy-specific wrappers (AlphaChip/MaskPlace/TopK) should attach their own
-        extra observation fields on top of this core dict.
+        Policy-specific wrappers should attach their own extra observation fields
+        on top of this core dict.
         """
         gid = self.remaining[0] if self.remaining else (self.node_ids[0] if self.node_ids else list(self.groups.keys())[0])
         g = self.groups[gid]
-
-        # metadata (keep dim=12 for now; refine later)
-        placed_ratio = float(len(self.placed)) / float(max(1, len(self.node_ids)))
-        remaining_ratio = float(len(self.remaining)) / float(max(1, len(self.node_ids)))
-        cost = float(self.cal_obj())
-        self._netlist_metadata[:] = 0.0
-        self._netlist_metadata[0] = placed_ratio
-        self._netlist_metadata[1] = remaining_ratio
-        self._netlist_metadata[2] = cost
-        self._netlist_metadata[3] = float(self.grid_width)
-        self._netlist_metadata[4] = float(self.grid_height)
 
         N = int(len(self.node_ids))
         placed_mask = torch.zeros((N,), dtype=torch.bool, device=self.device)
@@ -617,7 +777,6 @@ class FactoryLayoutEnv(gym.Env):
         cur_idx = int(self.gid_to_idx.get(gid, 0))
 
         obs: Dict[str, torch.Tensor] = {
-            "netlist_metadata": self._netlist_metadata,
             "current_gid_idx": torch.tensor([cur_idx], dtype=torch.long, device=self.device),
             # NOTE: normalized to canvas (grid) size for scale-stable learning.
             "next_group_wh": torch.tensor(
@@ -656,8 +815,6 @@ class FactoryLayoutEnv(gym.Env):
             info["reason"] = "not_placeable"
         else:
             self._apply_place(gid, float(x_bl), float(y_bl), int(r), update_caches=True)
-            # next-gid dependent zones
-            self._update_zone_invalid_for_next()
 
             cost_new = self.cal_obj()
             reward = -(cost_new - cost_prev) / float(self.reward_scale)
@@ -737,6 +894,7 @@ class FactoryLayoutEnv(gym.Env):
                     cost_new = float(self.cal_obj())
                     reward = -(cost_new - cost_prev) / float(self.reward_scale)
                     info["invalid"] = False
+                    info["reason"] = "placed"
                     terminated = len(self.remaining) == 0
                     truncated = self.max_steps is not None and self._step_count >= self.max_steps
 
@@ -829,9 +987,6 @@ class FactoryLayoutEnv(gym.Env):
         self._zone_invalid.zero_()
         self._recompute_invalid()
 
-        # reset dynamic node features (keep static w/h)
-        self._node_feat[:, 2:] = 0.0
-
         # Apply validated initial placements (and sync caches).
         if initial_positions is not None:
             if not isinstance(initial_positions, dict):
@@ -847,8 +1002,9 @@ class FactoryLayoutEnv(gym.Env):
                 if gid in self.placed:
                     raise ValueError(f"reset(options): initial_positions contains duplicate gid: {gid!r}")
                 if not self.is_placeable(gid, float(x), float(y), int(rot)):
-                    raise ValueError(
-                        f"reset(options): invalid initial placement gid={gid!r} pose=({x},{y},{rot})"
+                    warnings.warn(
+                        f"reset(options): invalid initial placement gid={gid!r} pose=({x},{y},{rot}) - placing anyway",
+                        stacklevel=2,
                     )
                 self._apply_place(gid, float(x), float(y), int(rot), update_caches=True)
 
@@ -876,7 +1032,6 @@ class FactoryLayoutEnv(gym.Env):
             "_clear_invalid": self._clear_invalid.clone(),
             "_invalid": self._invalid.clone(),
             "_zone_invalid": self._zone_invalid.clone(),
-            "_node_feat": self._node_feat.clone(),
         }
 
     def set_snapshot(self, snapshot: Dict[str, object]) -> None:
@@ -890,15 +1045,12 @@ class FactoryLayoutEnv(gym.Env):
         clr = snapshot.get("_clear_invalid", None)
         inv = snapshot.get("_invalid", None)
         zinv = snapshot.get("_zone_invalid", None)
-        nf = snapshot.get("_node_feat", None)
         if isinstance(occ, torch.Tensor):
             self._occ_invalid = occ.to(device=self.device, dtype=torch.bool).clone()
         if isinstance(clr, torch.Tensor):
             self._clear_invalid = clr.to(device=self.device, dtype=torch.bool).clone()
         if isinstance(zinv, torch.Tensor):
             self._zone_invalid = zinv.to(device=self.device, dtype=torch.bool).clone()
-        if isinstance(nf, torch.Tensor):
-            self._node_feat = nf.to(device=self.device, dtype=torch.float32).clone()
         # Recompute invalid from layers to keep invariant.
         self._recompute_invalid()
 

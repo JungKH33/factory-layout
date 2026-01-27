@@ -5,7 +5,7 @@ from typing import Protocol
 import torch
 
 from envs.env import FactoryLayoutEnv
-from actionspace.candidate_set import CandidateSet
+from envs.wrappers.candidate_set import CandidateSet
 
 
 class Agent(Protocol):
@@ -17,3 +17,5 @@ class Agent(Protocol):
     def select_action(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> int:
         """Return an action index in [0, N)."""
 
+    def value(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> float:
+        """Return a scalar leaf value estimate for MCTS (higher should be better)."""
