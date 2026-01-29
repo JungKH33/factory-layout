@@ -45,7 +45,7 @@ def _default_layer_visibility() -> dict[str, bool]:
     # - engine-internal invalid/clearance OFF (toggle when debugging)
     # - flow/score/candidates ON
     return {
-        "forbidden_mask": True,
+        "forbidden_areas": True,
         "invalid_mask": False,
         "clearance_mask": False,
         "flow": True,
@@ -68,7 +68,7 @@ def _apply_layer_visibility(groups: dict[str, list[Any]], vis: dict[str, bool]) 
 def _legend_proxies() -> list[Any]:
     # Keep consistent legend ordering/labels across viewers.
     return [
-        patches.Patch(facecolor="red", edgecolor="red", alpha=0.15, label="forbidden_mask"),
+        patches.Patch(facecolor="#d62728", edgecolor="#d62728", alpha=0.15, label="forbidden_areas"),
         patches.Patch(facecolor="#8b0000", edgecolor="#8b0000", alpha=0.10, label="invalid_mask"),
         patches.Patch(facecolor="#ff6b6b", edgecolor="#ff6b6b", alpha=0.10, label="clearance_mask"),
         Line2D([0], [0], color="blue", lw=1.5, alpha=0.3, label="flow"),
@@ -166,9 +166,8 @@ def _draw_layout_layers(
     candidate_set: Optional[CandidateSet] = None,
 ) -> dict[str, list[Any]]:
     """Draw the same base layers used by plot_layout (zones/masks/layout/flow/score/candidates)."""
-    zone_artists: dict[str, list[Any]] = {"weight": [], "dry": [], "height": [], "placement": []}
+    zone_artists: dict[str, list[Any]] = {"weight": [], "dry": [], "height": [], "placement": [], "forbidden": []}
     misc_artists: dict[str, list[Any]] = {
-        "forbidden": [],
         "invalid_mask": [],
         "clearance_mask": [],
         "flow": [],
@@ -296,11 +295,23 @@ def _draw_layout_layers(
                 label=label,
             )
 
-    # masks
-    mf = _plot_mask(ax, getattr(engine, "forbidden_mask", None), color="red", alpha=0.15)
-    if mf is not None:
-        mf.set_visible(True)
-        misc_artists["forbidden"].append(mf)
+    # forbidden_areas
+    if hasattr(engine, "forbidden_areas") and isinstance(getattr(engine, "forbidden_areas"), list):
+        for a in getattr(engine, "forbidden_areas"):
+            if not isinstance(a, dict):
+                continue
+            rect = a.get("rect", None)
+            if rect is None:
+                continue
+            _add_zone_rect(
+                rect=rect,
+                kind="forbidden",
+                edgecolor="#d62728",
+                facecolor="#d62728",
+                alpha=0.15,
+                linestyle="-",
+                label=None,
+            )
 
     # engine internal masks (start hidden)
     inv = getattr(engine, "_invalid", None)
@@ -383,7 +394,7 @@ def _draw_layout_layers(
     misc_artists["score"].append(score_text)
 
     return {
-        "forbidden_mask": misc_artists["forbidden"],
+        "forbidden_areas": zone_artists["forbidden"],
         "invalid_mask": misc_artists["invalid_mask"],
         "clearance_mask": misc_artists["clearance_mask"],
         "flow": misc_artists["flow"],
@@ -736,7 +747,18 @@ def save_layout(
                     )
 
     if show_masks:
-        _plot_mask(ax, engine.forbidden_mask, color="red", alpha=0.15)
+        # Draw forbidden_areas as rects
+        if hasattr(engine, "forbidden_areas") and isinstance(engine.forbidden_areas, list):
+            for a in engine.forbidden_areas:
+                if not isinstance(a, dict) or "rect" not in a:
+                    continue
+                rect = a["rect"]
+                x0, y0, x1, y1 = int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])
+                w, h = max(0, x1 - x0), max(0, y1 - y0)
+                if w > 0 and h > 0:
+                    p = patches.Rectangle((x0, y0), w, h, linewidth=1.2,
+                                          edgecolor="#d62728", facecolor="#d62728", alpha=0.15)
+                    ax.add_patch(p)
 
     for gid in engine.placed:
         x_bl, y_bl, rot = engine.positions[gid]
@@ -905,9 +927,8 @@ if __name__ == "__main__":
     }
     flow = {"A": {"B": 1.0}, "B": {"C": 0.7}}
 
-    # --- base masks ---
-    forbidden = torch.zeros((80, 120), dtype=torch.bool, device=dev)
-    forbidden[0:20, 0:30] = True
+    # --- forbidden areas ---
+    forbidden_areas = [{"rect": [0, 0, 30, 20]}]
 
     # --- zones / constraints ---
     # Unified schema: default_* + *_areas (rect,value)
@@ -933,7 +954,7 @@ if __name__ == "__main__":
         grid_height=80,
         groups=groups,
         group_flow=flow,
-        forbidden_mask=forbidden,
+        forbidden_areas=forbidden_areas,
         device=dev,
         max_steps=10,
         weight_areas=weight_areas,

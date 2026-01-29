@@ -150,10 +150,8 @@ class MaskPlaceWrapperEnv(BaseWrapper):
         y_flat = y_bl.reshape(-1)
         r_flat = torch.full((g2,), int(rot), dtype=torch.long, device=self.device)
 
-        # estimate_delta_obj returns scaled delta (divided by reward_scale).
-        # Convert back to objective units for map usage (no normalization).
-        scores = self.engine.estimate_delta_obj(gid=gid, x=x_flat, y=y_flat, rot=r_flat).to(dtype=torch.float32)
-        scores = scores * float(self.engine.reward_scale)
+        # estimate_delta_cost: raw Δcost (unscaled)
+        scores = self.engine.estimate_delta_cost(gid=gid, x=x_flat, y=y_flat, rot=r_flat).to(dtype=torch.float32)
         return scores.view(g, g)
 
     def _valid_top_left_body(self, *, gid: GroupId, rot: int) -> torch.Tensor:

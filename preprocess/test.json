@@ -1,0 +1,371 @@
+{
+  "grid": {
+    "width": 800,
+    "height": 542,
+    "grid_size": 1.0
+  },
+  "env": {
+    "max_candidates": 70,
+    "default_weight": 3,
+    "default_height": 5,
+    "default_dry": 35
+  },
+  "groups": {
+    "FAC00317683512501771": {
+      "width": 1.0,
+      "height": 1.0,
+      "rotatable": true,
+      "ent_rel_x": -0.5,
+      "ent_rel_y": 0.0,
+      "exi_rel_x": 0.5,
+      "exi_rel_y": 0.0,
+      "facility_clearance_left": 0,
+      "facility_clearance_right": 0,
+      "facility_clearance_bottom": 0,
+      "facility_clearance_top": 0,
+      "facility_height": 1,
+      "_facility_count": 1,
+      "_n_cols": 1,
+      "_n_rows": 1,
+      "_individual_width": 1.0,
+      "_individual_height": 1.0,
+      "_main_facility_id": "FAC00317683512501771_0",
+      "_type": "dockIn",
+      "_processGroup": "dock",
+      "_pathWidth": 4.0,
+      "_raw_clearance": {
+        "UL": 0.0,
+        "UR": 0.0,
+        "UB": 0.0,
+        "UA": 0.0
+      }
+    },
+    "FAC001176835129530078": {
+      "width": 594.16,
+      "height": 124.5,
+      "rotatable": false,
+      "ent_rel_x": 11.65,
+      "ent_rel_y": 21.8,
+      "exi_rel_x": 3.26,
+      "exi_rel_y": 21.8,
+      "facility_clearance_left": 25,
+      "facility_clearance_right": 0,
+      "facility_clearance_bottom": 0,
+      "facility_clearance_top": 0,
+      "facility_height": 5,
+      "facility_weight": 3,
+      "facility_dry": 35,
+      "allowed_areas": [
+        "3"
+      ],
+      "_facility_count": 25,
+      "_n_cols": 3,
+      "_n_rows": 9,
+      "_individual_width": 41.5,
+      "_individual_height": 43.6,
+      "_main_facility_id": "FAC001176835129530078_0",
+      "_type": "production",
+      "_processGroup": "PRC004",
+      "_pathWidth": 25.22,
+      "_raw_clearance": {
+        "UL": 25.22,
+        "UR": 0.0,
+        "UB": 0.0,
+        "UA": 0.0
+      }
+    },
+    "FAC001176835130024879": {
+      "width": 59.18,
+      "height": 141.06,
+      "rotatable": true,
+      "ent_rel_x": 29.59,
+      "ent_rel_y": 60.46,
+      "exi_rel_x": 29.59,
+      "exi_rel_y": -60.45,
+      "facility_clearance_left": 0,
+      "facility_clearance_right": 25,
+      "facility_clearance_bottom": 0,
+      "facility_clearance_top": 0,
+      "facility_height": 5,
+      "facility_weight": 3,
+      "facility_dry": 35,
+      "allowed_areas": [
+        "1",
+        "2",
+        "3"
+      ],
+      "_facility_count": 1,
+      "_n_cols": 1,
+      "_n_rows": 1,
+      "_individual_width": 59.18,
+      "_individual_height": 141.06,
+      "_main_facility_id": "FAC001176835130024879_0",
+      "_type": "production",
+      "_processGroup": "PRC004",
+      "_pathWidth": 25.22,
+      "_raw_clearance": {
+        "UL": 0.0,
+        "UR": 25.22,
+        "UB": 0.0,
+        "UA": 0.0
+      }
+    },
+    "FAC001176835130560383": {
+      "width": 211.99,
+      "height": 99.5,
+      "rotatable": true,
+      "ent_rel_x": -105.995,
+      "ent_rel_y": -31.02,
+      "exi_rel_x": 105.995,
+      "exi_rel_y": -31.27,
+      "facility_clearance_left": 25,
+      "facility_clearance_right": 25,
+      "facility_clearance_bottom": 0,
+      "facility_clearance_top": 0,
+      "facility_height": 5,
+      "facility_weight": 3,
+      "facility_dry": 35,
+      "allowed_areas": [
+        "3"
+      ],
+      "_facility_count": 1,
+      "_n_cols": 1,
+      "_n_rows": 1,
+      "_individual_width": 211.99,
+      "_individual_height": 99.5,
+      "_main_facility_id": "FAC001176835130560383_0",
+      "_type": "production",
+      "_processGroup": "PRC003",
+      "_pathWidth": 25.22,
+      "_raw_clearance": {
+        "UL": 25.22,
+        "UR": 25.22,
+        "UB": 0.0,
+        "UA": 0.0
+      }
+    },
+    "FAC0011768351318869133": {
+      "width": 585.0,
+      "height": 148.39,
+      "rotatable": false,
+      "ent_rel_x": -1.85,
+      "ent_rel_y": 16.325,
+      "exi_rel_x": -9.42,
+      "exi_rel_y": 16.325,
+      "facility_clearance_left": 0,
+      "facility_clearance_right": 0,
+      "facility_clearance_bottom": 0,
+      "facility_clearance_top": 25,
+      "facility_height": 5,
+      "facility_weight": 3,
+      "allowed_areas": [
+        "2",
+        "3"
+      ],
+      "_facility_count": 43,
+      "_n_cols": 15,
+      "_n_rows": 3,
+      "_individual_width": 39.0,
+      "_individual_height": 32.65,
+      "_main_facility_id": "FAC0011768351318869133_0",
+      "_type": "production",
+      "_processGroup": "PRC004",
+      "_pathWidth": 25.22,
+      "_raw_clearance": {
+        "UL": 0.0,
+        "UR": 0.0,
+        "UB": 0.0,
+        "UA": 25.22
+      }
+    },
+    "FAC001176835133020782": {
+      "width": 120.36,
+      "height": 29.8,
+      "rotatable": true,
+      "ent_rel_x": 23.785,
+      "ent_rel_y": -1.17,
+      "exi_rel_x": -23.785,
+      "exi_rel_y": 0.0,
+      "facility_clearance_left": 25,
+      "facility_clearance_right": 25,
+      "facility_clearance_bottom": 0,
+      "facility_clearance_top": 0,
+      "facility_height": 5,
+      "facility_weight": 3,
+      "facility_dry": 35,
+      "allowed_areas": [
+        "1"
+      ],
+      "_facility_count": 2,
+      "_n_cols": 2,
+      "_n_rows": 1,
+      "_individual_width": 47.57,
+      "_individual_height": 29.8,
+      "_main_facility_id": "FAC001176835133020782_0",
+      "_type": "production",
+      "_processGroup": "PRC004",
+      "_pathWidth": 25.22,
+      "_raw_clearance": {
+        "UL": 25.22,
+        "UR": 25.22,
+        "UB": 0.0,
+        "UA": 0.0
+      }
+    },
+    "FAC00317683513359952": {
+      "width": 1.0,
+      "height": 1.0,
+      "rotatable": true,
+      "ent_rel_x": -0.5,
+      "ent_rel_y": 0.0,
+      "exi_rel_x": 0.5,
+      "exi_rel_y": 0.0,
+      "facility_clearance_left": 0,
+      "facility_clearance_right": 0,
+      "facility_clearance_bottom": 0,
+      "facility_clearance_top": 0,
+      "facility_height": 1,
+      "_facility_count": 1,
+      "_n_cols": 1,
+      "_n_rows": 1,
+      "_individual_width": 1.0,
+      "_individual_height": 1.0,
+      "_main_facility_id": "FAC00317683513359952_0",
+      "_type": "dockOut",
+      "_processGroup": "dock",
+      "_pathWidth": 25.22,
+      "_raw_clearance": {
+        "UL": 0.0,
+        "UR": 0.0,
+        "UB": 0.0,
+        "UA": 0.0
+      }
+    },
+    "FAC001176835162859881": {
+      "width": 64.51,
+      "height": 141.06,
+      "rotatable": true,
+      "ent_rel_x": 32.255,
+      "ent_rel_y": 60.46,
+      "exi_rel_x": 32.255,
+      "exi_rel_y": -60.45,
+      "facility_clearance_left": 0,
+      "facility_clearance_right": 25,
+      "facility_clearance_bottom": 0,
+      "facility_clearance_top": 0,
+      "facility_height": 5,
+      "facility_weight": 3,
+      "facility_dry": 35,
+      "allowed_areas": [
+        "3"
+      ],
+      "_facility_count": 1,
+      "_n_cols": 1,
+      "_n_rows": 1,
+      "_individual_width": 64.51,
+      "_individual_height": 141.06,
+      "_main_facility_id": "FAC001176835162859881_0",
+      "_type": "production",
+      "_processGroup": "PRC004",
+      "_pathWidth": 25.22,
+      "_raw_clearance": {
+        "UL": 0.0,
+        "UR": 25.22,
+        "UB": 0.0,
+        "UA": 0.0
+      }
+    }
+  },
+  "flow": [
+    [
+      "FAC001176835129530078",
+      "FAC001176835130024879",
+      1.0
+    ],
+    [
+      "FAC001176835129530078",
+      "FAC001176835130560383",
+      1.0
+    ],
+    [
+      "FAC001176835130024879",
+      "FAC0011768351318869133",
+      1.0
+    ],
+    [
+      "FAC001176835130560383",
+      "FAC001176835129530078",
+      1.0
+    ],
+    [
+      "FAC001176835130560383",
+      "FAC001176835130024879",
+      1.0
+    ],
+    [
+      "FAC0011768351318869133",
+      "FAC001176835162859881",
+      1.0
+    ],
+    [
+      "FAC001176835133020782",
+      "FAC00317683513359952",
+      1.0
+    ],
+    [
+      "FAC001176835162859881",
+      "FAC001176835133020782",
+      1.0
+    ],
+    [
+      "FAC00317683512501771",
+      "FAC001176835130560383",
+      1.0
+    ]
+  ],
+  "zones": {
+    "placement_areas": [
+      {
+        "id": "1",
+        "rect": [
+          0,
+          0,
+          109,
+          542
+        ]
+      },
+      {
+        "id": "2",
+        "rect": [
+          109,
+          0,
+          800,
+          542
+        ]
+      },
+      {
+        "id": "3",
+        "rect": [
+          109,
+          297,
+          800,
+          542
+        ]
+      }
+    ]
+  },
+  "reset": {
+    "initial_positions": {
+      "FAC00317683512501771": [
+        0,
+        480,
+        0
+      ],
+      "FAC00317683513359952": [
+        0,
+        230,
+        0
+      ]
+    }
+  }
+}

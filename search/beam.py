@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
 
 from envs.wrappers.base import BaseWrapper
 from envs.wrappers.candidate_set import CandidateSet
 from agents.base import Agent
+from search.base import BaseSearch, SearchProgress, SearchResult, TopKTracker
 
 
 @dataclass(frozen=True)
@@ -15,13 +17,23 @@ class BeamConfig:
     beam_width: int = 8
     depth: int = 5
     expansion_topk: int = 16
+    track_top_k: int = 0  # 0이면 tracking 비활성화
+    track_verbose: bool = False  # True면 리스트 변경 시 print
 
 
-class BeamSearch:
+class BeamSearch(BaseSearch):
     """Beam search over wrapper env (Discrete + action_mask + snapshot)."""
 
     def __init__(self, *, config: BeamConfig):
+        super().__init__()
         self.config = config
+        # Initialize top-K tracker if enabled
+        if self.config.track_top_k > 0:
+            self.top_tracker = TopKTracker(
+                k=self.config.track_top_k, verbose=self.config.track_verbose
+            )
+        else:
+            self.top_tracker = None
 
     def select(
         self,
@@ -32,12 +44,23 @@ class BeamSearch:
         root_candidates: CandidateSet,
     ) -> int:
         root_snapshot = env.get_snapshot()
+        total_depth = int(self.config.depth)
+
+        # Only compute numpy arrays if callback is set (avoid overhead when not needed)
+        has_callback = self._progress_callback is not None
+        if has_callback:
+            n_actions = int(root_candidates.mask.shape[0])
+            mask_np = root_candidates.mask.detach().cpu().numpy().astype(bool)
+            # Track scores for each root action (for progress reporting)
+            root_action_scores: Dict[int, float] = {}
+        else:
+            root_action_scores = None  # type: ignore
 
         # Each beam item:
         # (cum_reward, first_action, snapshot, obs_at_snapshot)
         beams: List[Tuple[float, int, Dict[str, object], dict]] = [(0.0, -1, root_snapshot, obs)]
 
-        for depth in range(int(self.config.depth)):
+        for depth in range(total_depth):
             new_beams: List[Tuple[float, int, Dict[str, object], dict]] = []
             for cum_reward, first_action, snap, obs_node in beams:
                 env.set_snapshot(snap)
@@ -49,6 +72,8 @@ class BeamSearch:
                     # If wrapper-specific keys are missing (e.g. env returned core obs after truncated),
                     # treat this node as a leaf and do not expand further.
                     if not (isinstance(obs_node, dict) and ("action_mask" in obs_node)):
+                        # Track terminal state
+                        self._track_if_terminal(env, cum_reward, is_terminal=True)
                         new_beams.append(
                             (
                                 cum_reward,
@@ -62,6 +87,8 @@ class BeamSearch:
                 valid_mask = candidates.mask
                 valid_n = int(valid_mask.to(torch.int64).sum().item())
                 if valid_n <= 0:
+                    # Track terminal state (no valid actions = terminal)
+                    self._track_if_terminal(env, cum_reward, is_terminal=True)
                     new_beams.append(
                         (
                             cum_reward,
@@ -97,8 +124,9 @@ class BeamSearch:
                     root_a = a if first_action < 0 else int(first_action)
                     new_beams.append((new_cum, root_a, env.get_snapshot(), obs2))
 
+                    # Track completed placements
                     if terminated or truncated:
-                        pass
+                        self._track_if_terminal(env, new_cum, is_terminal=True)
 
             if not new_beams:
                 break
@@ -106,10 +134,76 @@ class BeamSearch:
             new_beams.sort(key=lambda t: t[0], reverse=True)
             beams = new_beams[: int(self.config.beam_width)]
 
+            # Emit progress (only if callback is set)
+            if has_callback:
+                # Update root action scores from current beams
+                for cum_reward, root_a, _, _ in beams:
+                    if root_a >= 0:
+                        if root_a not in root_action_scores or cum_reward > root_action_scores[root_a]:
+                            root_action_scores[root_a] = cum_reward
+                
+                self._emit_beam_progress(
+                    depth + 1, total_depth, n_actions, mask_np, root_action_scores, beams
+                )
+
         best = beams[0][1] if beams else 0
 
         env.set_snapshot(root_snapshot)
         return int(best) if int(best) >= 0 else 0
+
+    def _emit_beam_progress(
+        self,
+        depth: int,
+        total_depth: int,
+        n_actions: int,
+        mask: np.ndarray,
+        root_action_scores: Dict[int, float],
+        beams: List[Tuple[float, int, Dict[str, object], dict]],
+    ) -> None:
+        """Emit progress for beam search."""
+        # visits: count how many beams have each root action
+        visits = np.zeros(n_actions, dtype=np.int32)
+        values = np.zeros(n_actions, dtype=np.float32)
+        
+        for cum_reward, root_a, _, _ in beams:
+            if 0 <= root_a < n_actions:
+                visits[root_a] += 1
+                values[root_a] = max(values[root_a], cum_reward)
+        
+        # Also include best scores from root_action_scores
+        for root_a, score in root_action_scores.items():
+            if 0 <= root_a < n_actions:
+                values[root_a] = max(values[root_a], score)
+        
+        # Find best action
+        valid_values = np.where(mask, values, -np.inf)
+        best_action = int(np.argmax(valid_values))
+        best_value = float(values[best_action]) if best_action < len(values) else 0.0
+        
+        progress = SearchProgress(
+            iteration=depth,
+            total=total_depth,
+            visits=visits,
+            values=values,
+            best_action=best_action,
+            best_value=best_value,
+            extra={"beam_size": len(beams), "active_root_actions": len(root_action_scores)},
+        )
+        self._emit_progress(progress)
+
+    def _track_if_terminal(self, env: BaseWrapper, cum_reward: float, *, is_terminal: bool) -> None:
+        """Track terminal state if tracking is enabled."""
+        if self.top_tracker is None or not is_terminal:
+            return
+        # cal_total_cost(): objective + 미배치 페널티 포함
+        cost = env.engine.cal_total_cost()
+        positions = {str(gid): pos for gid, pos in env.engine.positions.items()}
+        self.top_tracker.add(SearchResult(
+            cost=cost,
+            cum_reward=cum_reward,
+            positions=positions,
+            snapshot=env.get_snapshot(),
+        ))
 
     def _candidates_from_obs(self, env: BaseWrapper, obs: dict) -> CandidateSet:
         mask = obs.get("action_mask", None)

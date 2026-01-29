@@ -22,12 +22,15 @@ class FacilityGroup:
     movable: bool = True
     rotatable: bool = True
     # Constraint attributes (do NOT conflict with footprint width/height):
-    # - facility_height: vertical height for ceiling constraint
-    # - facility_weight: weight for weight-zone constraint
-    # - facility_dry: dry/air-condition requirement level
-    facility_height: float = 0.0
-    facility_weight: float = 0.0
-    facility_dry: float = 0.0
+    # - facility_height: vertical height for ceiling constraint (invalid where map < value)
+    # - facility_weight: weight for weight-zone constraint (invalid where map < value)
+    # - facility_dry: dry/air-condition requirement level (invalid where map > value)
+    # Default values chosen so no constraint is applied when unspecified:
+    # - height/weight: -inf → (map < -inf) is always False
+    # - dry: inf → (map > inf) is always False
+    facility_height: float = float('-inf')
+    facility_weight: float = float('-inf')
+    facility_dry: float = float('inf')
     # IO relative offsets (CENTER-based local coordinates).
     # These are rotated with the facility (multiples of 90 degrees) and added to the world center.
     ent_rel_x: float = 0.0
@@ -63,8 +66,8 @@ class FactoryLayoutEnv(gym.Env):
         grid_height: int,
         groups: Dict[GroupId, FacilityGroup],
         group_flow: Optional[Dict[GroupId, Dict[GroupId, float]]] = None,
-        # Masks are torch.BoolTensor[H,W] where True means forbidden/invalid.
-        forbidden_mask: Optional[torch.Tensor] = None,
+        # Forbidden areas: [{"rect": [x0, y0, x1, y1]}, ...]
+        forbidden_areas: Optional[List[Dict[str, Any]]] = None,
         # --- zone/constraint configs (optional; fully map-based) ---
         # For each constraint, we define a per-cell float map:
         # - map is initialized from env.default_*
@@ -81,8 +84,8 @@ class FactoryLayoutEnv(gym.Env):
         placement_areas: Optional[List[Dict[str, Any]]] = None,  # [{"id": str, "rect":[x0,y0,x1,y1]}, ...]
         device: Optional[torch.device] = None,
         max_steps: Optional[int] = None,
-        reward_scale: float = 100.0,
-        penalty_scale: float = 5000.0,
+        cost_scale: float = 100.0,
+        penalty_weight: float = 50000.0,
         log: bool = False,
     ):
         super().__init__()
@@ -90,7 +93,7 @@ class FactoryLayoutEnv(gym.Env):
         self.grid_height = int(grid_height)
         self.groups = dict(groups)
         self.group_flow = group_flow or {}
-        self.forbidden_mask = forbidden_mask.to(torch.bool) if forbidden_mask is not None else None
+        self.forbidden_areas = list(forbidden_areas or [])
         self.default_weight = float(default_weight)
         self.default_height = float(default_height)
         self.default_dry = float(default_dry)
@@ -100,8 +103,8 @@ class FactoryLayoutEnv(gym.Env):
         self.placement_areas = list(placement_areas or [])
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
         self.max_steps = max_steps
-        self.reward_scale = float(reward_scale)
-        self.penalty_scale = float(penalty_scale)
+        self.cost_scale = float(cost_scale)
+        self.penalty_weight = float(penalty_weight)
         self.log = bool(log)
 
         # Engine does not own action semantics. Wrappers define action_space/obs additions.
@@ -400,14 +403,19 @@ class FactoryLayoutEnv(gym.Env):
         return (float(cx) + float(ent_dx), float(cy) + float(ent_dy), float(cx) + float(exi_dx), float(cy) + float(exi_dy))
 
     def estimate_delta_obj(self, *, gid: GroupId, x: object, y: object, rot: object):
-        """Estimate *scaled* objective delta if placing `gid` at (x,y,rot).
+        """배치 시 예상 Δcost (unscaled, raw).
 
-        - Accepts scalar (int/float) or batched torch.Tensor[M] inputs.
-        - Always uses the same batched math path (no per-candidate is_placeable checks for speed).
+        - scalar (int/float) 또는 batched torch.Tensor[M] 입력 지원.
+        - is_placeable 체크 없이 빠른 계산.
 
-        Delta matches current `cal_obj()` definition:
-        - Flow: EXIT(src) -> ENTRY(dst) directed L1 with IO offsets (both outgoing and incoming edges affected by new gid).
-        - Compactness: bbox HPWL = 0.5*(dx+dy).
+        Delta = Δflow + Δcompactness:
+        - Flow: EXIT(src) -> ENTRY(dst) directed L1
+        - Compactness: bbox HPWL = 0.5*(dx+dy)
+        
+        반환: raw cost 변화량 (낮을수록 좋은 배치)
+        
+        Note: 기존에는 scaled를 반환했으나, 이제 unscaled 반환.
+        scaled가 필요하면 estimate_reward() 사용.
         """
         scalar_input = not (torch.is_tensor(x) or torch.is_tensor(y) or torch.is_tensor(rot))
         if gid not in self.groups:
@@ -580,11 +588,37 @@ class FactoryLayoutEnv(gym.Env):
             new_hpwl = 0.5 * ((new_max_x - new_min_x) + (new_max_y - new_min_y))
             delta_comp = new_hpwl - float(cur_hpwl_scalar)
 
-        delta = (delta_flow + delta_comp) / float(self.reward_scale)
-        delta = delta.to(dtype=torch.float32)
+        delta = (delta_flow + delta_comp).to(dtype=torch.float32)
         if scalar_input:
             return float(delta[0].item())
         return delta
+
+    def estimate_delta_cost(self, *, gid: GroupId, x: object, y: object, rot: object):
+        """배치 시 예상 Δcost (unscaled, raw).
+        
+        score map, action 비교 등에 사용.
+        반환: raw cost 변화량 (낮을수록 좋은 배치)
+        """
+        return self.estimate_delta_obj(gid=gid, x=x, y=y, rot=rot)
+
+    def estimate_reward(self, *, gid: GroupId, x: object, y: object, rot: object):
+        """배치 시 예상 reward.
+        
+        policy 학습, action selection 등에 사용.
+        반환: -Δcost / cost_scale (높을수록 좋은 배치)
+        """
+        delta_cost = self.estimate_delta_obj(gid=gid, x=x, y=y, rot=rot)
+        if torch.is_tensor(delta_cost):
+            return -delta_cost / float(self.cost_scale)
+        return -float(delta_cost) / float(self.cost_scale)
+
+    def estimate_terminal_reward(self) -> float:
+        """현재 상태의 예상 최종 reward (MCTS leaf 평가용).
+        
+        반환: -cal_total_cost() / cost_scale
+        누적 reward와 동일한 스케일.
+        """
+        return -float(self.cal_total_cost()) / float(self.cost_scale)
 
     def try_place(self, gid: GroupId, x: float, y: float, rot: int) -> bool:
         """Place a group if feasible; returns True on success.
@@ -694,6 +728,19 @@ class FactoryLayoutEnv(gym.Env):
         compactness = 0.5 * ((max_x - min_x) + (max_y - min_y))
         return float(total_distance + compactness)
 
+    def cal_total_cost(self) -> float:
+        """통합 cost: objective + 미배치 페널티.
+        
+        - 완료된 레이아웃: cal_obj()와 동일 (페널티 0)
+        - 미완료 레이아웃: cal_obj() + penalty_weight * remaining_ratio
+        
+        TopK 정렬 및 레이아웃 비교에 사용.
+        최종 reward = -cal_total_cost / cost_scale 관계 성립.
+        """
+        base = self.cal_obj()
+        penalty = float(self.penalty_weight) * self._remaining_area_ratio()
+        return base + penalty
+
     def _remaining_area_ratio(self) -> float:
         """Remaining area / total area ratio in [0,1]. Mirrors env.py."""
         total_area = 0.0
@@ -713,14 +760,47 @@ class FactoryLayoutEnv(gym.Env):
         return float(ratio)
 
     def _failure_penalty(self) -> float:
-        """Penalty reward for failed placement or no valid actions (negative)."""
-        return -float(self.penalty_scale) * self._remaining_area_ratio()
+        """Penalty reward for failed placement or no valid actions (negative).
+        
+        스케일 통일: -(penalty_weight * remaining) / cost_scale
+        이로써 최종 reward = -cal_total_cost / cost_scale 관계 성립.
+        """
+        raw_penalty = float(self.penalty_weight) * self._remaining_area_ratio()
+        return -raw_penalty / float(self.cost_scale)
+
+    def _fail(
+        self, reason: str, **extra: Any
+    ) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
+        """실패 처리 통합 헬퍼."""
+        reward = self._failure_penalty()
+        info: Dict[str, Any] = {"reason": reason, "invalid": True}
+        info.update(extra)
+
+        if self.log:
+            base_cost = float(self.cal_obj())
+            penalty = float(self.penalty_weight) * self._remaining_area_ratio()
+            total_cost = base_cost + penalty
+            print(
+                f"[env] fail: reason={reason} remaining={len(self.remaining)} "
+                f"cost={total_cost:.3f} (base={base_cost:.3f} + penalty={penalty:.3f}) reward={reward:.3f}"
+            )
+
+        return self._build_obs(), float(reward), False, True, info
 
     # ---- cached maps ----
     def _build_static_invalid(self) -> torch.Tensor:
         inv = torch.zeros((self.grid_height, self.grid_width), dtype=torch.bool, device=self.device)
-        if self.forbidden_mask is not None:
-            inv |= self.forbidden_mask.to(self.device)
+        # Build forbidden mask from forbidden_areas list
+        for area in self.forbidden_areas:
+            if not isinstance(area, dict) or "rect" not in area:
+                continue
+            rect = area["rect"]
+            x0 = max(0, min(self.grid_width, int(rect[0])))
+            x1 = max(0, min(self.grid_width, int(rect[2])))
+            y0 = max(0, min(self.grid_height, int(rect[1])))
+            y1 = max(0, min(self.grid_height, int(rect[3])))
+            if x1 > x0 and y1 > y0:
+                inv[y0:y1, x0:x1] = True
         return inv
 
     def _recompute_invalid(self) -> None:
@@ -790,40 +870,92 @@ class FactoryLayoutEnv(gym.Env):
         }
         return obs
 
-    def step_place(self, *, x: float, y: float, rot: int) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
-        """Engine step: place current group at raw (x,y,rot)."""
+    def step_action(
+        self,
+        *,
+        x: float,
+        y: float,
+        rot: int,
+        # 옵션: mask 관련 (없으면 검사 안함)
+        action: Optional[int] = None,
+        mask: Optional[torch.Tensor] = None,
+        action_space_n: Optional[int] = None,
+        extra_info: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
+        """통합 step 메서드: 배치 시도 + 옵션 mask 검사.
+
+        Args:
+            x, y, rot: 배치 좌표 (bottom-left, rotation)
+            action: (옵션) discrete action index (mask 검사용)
+            mask: (옵션) action mask (True=valid)
+            action_space_n: (옵션) action space 크기
+            extra_info: (옵션) info에 추가할 정보
+        """
         self._step_count += 1
+
+        # 0. extra_info 처리
         info: Dict[str, Any] = {}
+        if extra_info:
+            info.update(dict(extra_info))
 
+        # 1. 이미 완료된 경우
         if not self.remaining:
-            return self._build_obs(), 0.0, True, False, {"reason": "done"}
+            return self._build_obs(), 0.0, True, False, {"reason": "done", "invalid": False}
 
+        # 2. Mask 검사 (파라미터가 있을 때만)
+        if mask is not None:
+            if int(mask.to(torch.int64).sum().item()) == 0:
+                return self._fail("no_valid_actions")
+            if action is not None and action_space_n is not None:
+                if int(action) < 0 or int(action) >= int(action_space_n):
+                    return self._fail("action_out_of_range")
+                if not bool(mask[int(action)].item()):
+                    return self._fail("masked_action")
+
+        # 3. 배치 시도
         gid = self.remaining[0]
         x_bl = self._as_int(x, name="x")
         y_bl = self._as_int(y, name="y")
         r = self._norm_rot(int(rot))
-        info.update({"gid": gid, "x": int(x_bl), "y": int(y_bl), "rot": int(r)})
-
-        cost_prev = self.cal_obj()
-        terminated = False
-        truncated = False
-        reward = 0.0
 
         if not self.is_placeable(gid, float(x_bl), float(y_bl), int(r)):
-            reward = -1.0 / float(self.reward_scale)
-            truncated = True
-            info["reason"] = "not_placeable"
-        else:
-            self._apply_place(gid, float(x_bl), float(y_bl), int(r), update_caches=True)
+            return self._fail("not_placeable", gid=gid, x=int(x_bl), y=int(y_bl), rot=int(r))
 
-            cost_new = self.cal_obj()
-            reward = -(cost_new - cost_prev) / float(self.reward_scale)
-            terminated = len(self.remaining) == 0
-            if self.max_steps is not None and self._step_count >= self.max_steps:
-                truncated = True
-            info["reason"] = "placed"
+        # 4. 성공 배치
+        cost_prev = float(self.cal_obj())
+        self._apply_place(gid, float(x_bl), float(y_bl), int(r), update_caches=True)
+        cost_new = float(self.cal_obj())
+
+        reward = -(cost_new - cost_prev) / float(self.cost_scale)
+        terminated = len(self.remaining) == 0
+        truncated = self.max_steps is not None and self._step_count >= self.max_steps
+
+        info.update({
+            "reason": "placed",
+            "invalid": False,
+            "gid": gid,
+            "x": int(x_bl),
+            "y": int(y_bl),
+            "rot": int(r),
+        })
+
+        # 5. 로깅
+        if self.log and (terminated or truncated):
+            total_cost = self.cal_total_cost()
+            print(
+                f"[env] end: terminated={terminated} truncated={truncated} "
+                f"remaining={len(self.remaining)} placed={len(self.placed)} step={self._step_count} "
+                f"cost={total_cost:.3f} reason=placed reward={reward:.3f}"
+            )
 
         return self._build_obs(), float(reward), bool(terminated), bool(truncated), info
+
+    # --- Backward-compatible aliases ---
+    def step_place(
+        self, *, x: float, y: float, rot: int
+    ) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
+        """단순 배치 API (backward-compatible). step_action() 호출."""
+        return self.step_action(x=x, y=y, rot=rot)
 
     def step_masked(
         self,
@@ -836,81 +968,16 @@ class FactoryLayoutEnv(gym.Env):
         action_space_n: int,
         extra_info: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
-        """Engine step for discrete action selection with action-masking (env.py 270-328 equivalent).
-
-        Wrapper supplies:
-        - action: chosen discrete index
-        - (x,y,rot): decoded placement for that index
-        - mask: torch.BoolTensor[N] where True means valid (can be None)
-        - action_space_n: N (range check)
-        """
-        info: Dict[str, Any] = {}
-        if extra_info:
-            info.update(dict(extra_info))
-
-        self._step_count += 1
-        reward = 0.0
-        terminated = False
-        truncated = False
-
-        # (1) Failure cases: set flags/reward only (single exit)
-        if len(self.remaining) > 0 and mask is not None and int(mask.to(torch.int64).sum().item()) == 0:
-            info["invalid"] = True
-            info["reason"] = "no_valid_actions"
-            reward = float(self._failure_penalty())
-            truncated = True
-
-        elif int(action) < 0 or int(action) >= int(action_space_n):
-            info["invalid"] = True
-            info["reason"] = "action_out_of_range"
-            reward = float(self._failure_penalty())
-            truncated = True
-
-        elif mask is not None and (not bool(mask[int(action)].item())):
-            info["invalid"] = True
-            info["reason"] = "masked_action"
-            reward = float(self._failure_penalty())
-            truncated = True
-
-        else:
-            # (2) Normal placement path
-            if not self.remaining:
-                terminated = True
-                info["invalid"] = False
-                info["reason"] = "done"
-            else:
-                gid = self.remaining[0]
-                x_bl = self._as_int(x, name="x")
-                y_bl = self._as_int(y, name="y")
-                r = self._norm_rot(int(rot))
-                if not self.is_placeable(gid, float(x_bl), float(y_bl), int(r)):
-                    info["invalid"] = True
-                    info["reason"] = "not_placeable"
-                    reward = float(self._failure_penalty())
-                    truncated = True
-                else:
-                    cost_prev = float(self.cal_obj())
-                    self._apply_place(gid, float(x_bl), float(y_bl), int(r), update_caches=True)
-                    cost_new = float(self.cal_obj())
-                    reward = -(cost_new - cost_prev) / float(self.reward_scale)
-                    info["invalid"] = False
-                    info["reason"] = "placed"
-                    terminated = len(self.remaining) == 0
-                    truncated = self.max_steps is not None and self._step_count >= self.max_steps
-
-        obs = self._build_obs()
-
-        # (3) Single logging point
-        if getattr(self, "log", False) and (terminated or truncated):
-            cost_now = float(self.cal_obj())
-            reason = info.get("reason", "")
-            print(
-                f"[env] end: terminated={terminated} truncated={truncated} "
-                f"remaining={len(self.remaining)} placed={len(self.placed)} step={self._step_count} "
-                f"cost={cost_now:.3f} reason={reason} reward={float(reward):.3f}"
-            )
-
-        return obs, float(reward), bool(terminated), bool(truncated), info
+        """Wrapper용 API (backward-compatible). step_action() 호출."""
+        return self.step_action(
+            x=x,
+            y=y,
+            rot=rot,
+            action=action,
+            mask=mask,
+            action_space_n=action_space_n,
+            extra_info=extra_info,
+        )
 
     # ---- gym api ----
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):
@@ -1080,9 +1147,8 @@ if __name__ == "__main__":
     }
     group_flow = {"A": {"B": 1.0}, "B": {"C": 0.7}}
 
-    # Base forbidden area.
-    forbidden = torch.zeros((80, 120), dtype=torch.bool, device=dev)
-    forbidden[0:20, 0:30] = True
+    # Base forbidden area (now as list of rects).
+    forbidden_areas = [{"rect": [0, 0, 30, 20]}]
 
     # Constraints (optional; unified default + area override):
     default_weight = 10.0
@@ -1101,7 +1167,7 @@ if __name__ == "__main__":
         grid_height=80,
         groups=groups,
         group_flow=group_flow,
-        forbidden_mask=forbidden,
+        forbidden_areas=forbidden_areas,
         device=dev,
         max_steps=10,
         log=True,

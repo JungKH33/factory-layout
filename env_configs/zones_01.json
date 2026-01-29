@@ -90,14 +90,10 @@
     ["F", "I", 0.4],
     ["H", "J", 0.5]
   ],
-  "masks": {
-    "forbidden_rects": [
-      [0, 0, 150, 200]
-    ],
-    "column_rects": [
-    ]
-  },
   "zones": {
+    "forbidden_areas": [
+      { "rect": [0, 0, 150, 200] }
+    ],
     "weight_areas": [
       { "rect": [300, 0, 500, 500], "value": 25.0 }
     ],

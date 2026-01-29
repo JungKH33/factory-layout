@@ -56,7 +56,7 @@ def _mask_from_forbidden_rects(grid_w: int, grid_h: int, rects: List[RectI]):
     return RectMask(allowed)
 
 
-def _torch_forbidden_mask_from_rects(
+def _build_forbidden_area_tensor(
     grid_w: int, grid_h: int, rects: List[RectI], *, device: torch.device
 ) -> torch.Tensor:
     """Build torch.BoolTensor[H,W] where True means forbidden/invalid."""
@@ -117,9 +117,9 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
             height=_to_int(g["height"]),
             movable=bool(g.get("movable", True)),
             rotatable=bool(g.get("rotatable", True)),
-            facility_weight=float(g.get("facility_weight", 0.0)),
-            facility_height=float(g.get("facility_height", 0.0)),
-            facility_dry=float(g.get("facility_dry", 0.0)),
+            facility_weight=float(g.get("facility_weight", float('-inf'))),
+            facility_height=float(g.get("facility_height", float('-inf'))),
+            facility_dry=float(g.get("facility_dry", float('inf'))),
             # IO offsets (center-based local coords; optional)
             ent_rel_x=float(g.get("ent_rel_x", 0.0)),
             ent_rel_y=float(g.get("ent_rel_y", 0.0)),
@@ -141,18 +141,15 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
     else:
         raise ValueError("flow must be a dict adjacency or an edge list")
 
-    masks = data.get("masks", {})
     dev = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
-    forbidden_mask = None
-    if "forbidden_rects" in masks:
-        forbidden_mask = _torch_forbidden_mask_from_rects(
-            grid_w, grid_h, masks["forbidden_rects"], device=dev
-        )
-    zones = data.get("zones", {})
-    weight_areas: List[Dict[str, Any]] = list(zones.get("weight_areas", [])) if isinstance(zones, dict) else []
-    dry_areas: List[Dict[str, Any]] = list(zones.get("dry_areas", [])) if isinstance(zones, dict) else []
-    height_areas: List[Dict[str, Any]] = list(zones.get("height_areas", [])) if isinstance(zones, dict) else []
-    placement_areas: List[Dict[str, Any]] = list(zones.get("placement_areas", [])) if isinstance(zones, dict) else []
+    zones = data.get("zones", {}) if isinstance(data.get("zones"), dict) else {}
+    
+    # All zone areas use format: [{"rect": [x0, y0, x1, y1], ...}, ...]
+    forbidden_areas: List[Dict[str, Any]] = list(zones.get("forbidden_areas", []))
+    weight_areas: List[Dict[str, Any]] = list(zones.get("weight_areas", []))
+    dry_areas: List[Dict[str, Any]] = list(zones.get("dry_areas", []))
+    height_areas: List[Dict[str, Any]] = list(zones.get("height_areas", []))
+    placement_areas: List[Dict[str, Any]] = list(zones.get("placement_areas", []))
 
     # NOTE: New schema (no backward-compat): areas are dicts with {"rect": [x0,y0,x1,y1], "value": float}
     for name, areas in [("weight_areas", weight_areas), ("dry_areas", dry_areas), ("height_areas", height_areas)]:
@@ -176,13 +173,7 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         grid_height=grid_h,
         groups=groups,
         group_flow=flow,
-        max_steps=int(env_cfg.get("max_steps")) if env_cfg.get("max_steps") is not None else None,
-        reward_scale=float(env_cfg.get("reward_scale", 100.0)),
-        penalty_scale=float(env_cfg.get("penalty_scale", 30.0)),
-        forbidden_mask=forbidden_mask,
-        # Optional defaults (if omitted, behave as "no constraint" by default):
-        # - weight/height: +inf => never invalid by (map < facility_value)
-        # - dry (reverse): -inf => never invalid by (map > facility_value)
+        forbidden_areas=forbidden_areas,
         default_weight=float(env_cfg.get("default_weight", float("inf"))),
         default_height=float(env_cfg.get("default_height", float("inf"))),
         default_dry=float(env_cfg.get("default_dry", -float("inf"))),
@@ -190,8 +181,6 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         height_areas=height_areas,
         dry_areas=dry_areas,
         placement_areas=placement_areas,
-        device=dev,
-        log=bool(env_cfg.get("log", False)),
     )
 
     reset_cfg = data.get("reset", {})
@@ -254,9 +243,9 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         raise ValueError("flow must be a dict adjacency or an edge list")
 
     masks = data.get("masks", {})
-    forbidden_mask = None
+    forbidden_area = None
     if "forbidden_rects" in masks:
-        forbidden_mask = _mask_from_forbidden_rects(grid_w, grid_h, masks["forbidden_rects"])
+        forbidden_area = _mask_from_forbidden_rects(grid_w, grid_h, masks["forbidden_rects"])
     dry_mask = None
     if "dry_forbidden_rects" in masks:
         dry_mask = _mask_from_forbidden_rects(grid_w, grid_h, masks["dry_forbidden_rects"])
@@ -274,7 +263,7 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         max_steps=int(env_cfg.get("max_steps")) if env_cfg.get("max_steps") is not None else None,
         reward_scale=float(env_cfg.get("reward_scale", 100.0)),
         penalty_scale=float(env_cfg.get("penalty_scale", 30.0)),
-        forbidden_mask=forbidden_mask,
+        forbidden_area=forbidden_area,
         dry_mask=dry_mask,
         weight_mask=weight_mask,
         log=bool(env_cfg.get("log", False)),

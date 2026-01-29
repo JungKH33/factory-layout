@@ -26,9 +26,9 @@
       ["E", "H", 0.6],
       ["F", "I", 0.4]
     ],
-    "masks": {
-      "forbidden_rects": [
-        [0, 0, 150, 200]
+    "zones": {
+      "forbidden_areas": [
+        { "rect": [0, 0, 150, 200] }
       ]
     },
     "reset": {}

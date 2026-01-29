@@ -1,0 +1,7043 @@
+{
+  "projectId": "PRJ-20260114-857",
+  "factoryName": "SMA_영역구분3",
+  "factoryDimensions": {
+    "ceilingHeight": 5,
+    "width": 80000,
+    "height": 54204,
+    "dry": 35,
+    "weight": 3
+  },
+  "facilities": [
+    {
+      "id": "FAC00317683512501771_0",
+      "width": 100,
+      "height": 100,
+      "facilityHeightDouble": 1,
+      "pathWidth": 400,
+      "lineWidth": 400,
+      "lineCount": 1,
+      "nextFacilityGroup": [
+        "FAC001176835130560383"
+      ],
+      "entranceRelativeX": 0,
+      "entranceRelativeY": 50,
+      "exitRelativeX": 100,
+      "exitRelativeY": 50,
+      "processGroup": "dock",
+      "type": "dockIn",
+      "facilityGroup": "FAC00317683512501771",
+      "mainFacility": true,
+      "areaMap": {
+        "FACILITY": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "FAC001176835129530078_0",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_1",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_2",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_3",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_4",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_5",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_6",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_7",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_8",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_9",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_10",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_11",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_12",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_13",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_14",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_15",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_16",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_17",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_18",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_19",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_20",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_21",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_22",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_23",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835129530078_24",
+      "width": 4150,
+      "height": 4360,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 3240,
+      "entranceRelativeY": 4360,
+      "exitRelativeX": 2401,
+      "exitRelativeY": 4360,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835129530078",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4150,
+            "height": 4360
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 840,
+            "width": 4150,
+            "height": 1020
+          },
+          {
+            "x": 1500,
+            "y": 1860,
+            "width": 493,
+            "height": 2500
+          },
+          {
+            "x": 3658,
+            "y": 1860,
+            "width": 492,
+            "height": 2500
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835130024879",
+        "FAC001176835130560383"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835130024879_0",
+      "width": 5918,
+      "height": 14106,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 5918,
+      "entranceRelativeY": 13099,
+      "exitRelativeX": 5918,
+      "exitRelativeY": 1008,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835130024879",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "1",
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 5918,
+            "height": 14106
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 4580,
+            "y": 2015,
+            "width": 1338,
+            "height": 10076
+          },
+          {
+            "x": -500,
+            "y": -500,
+            "width": 6918,
+            "height": 15106
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC0011768351318869133"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835130560383_0",
+      "width": 21199,
+      "height": 9950,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 0,
+      "entranceRelativeY": 1873,
+      "exitRelativeX": 21199,
+      "exitRelativeY": 1848,
+      "processGroup": "PRC003",
+      "type": "production",
+      "facilityGroup": "FAC001176835130560383",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 21199,
+            "height": 9950
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": -500,
+            "y": -500,
+            "width": 22199,
+            "height": 10950
+          },
+          {
+            "x": 0,
+            "y": 5940,
+            "width": 10240,
+            "height": 4010
+          },
+          {
+            "x": 18041,
+            "y": 5386,
+            "width": 3159,
+            "height": 4564
+          },
+          {
+            "x": 18100,
+            "y": 0,
+            "width": 3099,
+            "height": 998
+          },
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3127,
+            "height": 1023
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835129530078",
+        "FAC001176835130024879"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_0",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_1",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_2",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_3",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_4",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_5",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_6",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_7",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_8",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_9",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_10",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_11",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_12",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_13",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_14",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_15",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_16",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_17",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_18",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_19",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_20",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_21",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_22",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_23",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_24",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_25",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_26",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_27",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_28",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_29",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_30",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_31",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_32",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_33",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_34",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_35",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_36",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_37",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_38",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_39",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_40",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_41",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC0011768351318869133_42",
+      "width": 3900,
+      "height": 3265,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 1765,
+      "entranceRelativeY": 3265,
+      "exitRelativeX": 1008,
+      "exitRelativeY": 3265,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC0011768351318869133",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "2",
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 3265
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 3900,
+            "height": 1370
+          },
+          {
+            "x": 2105,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": 1370,
+            "width": 565,
+            "height": 1895
+          },
+          {
+            "x": 0,
+            "y": -1500,
+            "width": 3900,
+            "height": 4765
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835162859881"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835133020782_0",
+      "width": 4757,
+      "height": 2980,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 4757,
+      "entranceRelativeY": 1373,
+      "exitRelativeX": 0,
+      "exitRelativeY": 1490,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835133020782",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "1"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4757,
+            "height": 2980
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": -500,
+            "y": -500,
+            "width": 5757,
+            "height": 3980
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC00317683513359952"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC001176835133020782_1",
+      "width": 4757,
+      "height": 2980,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 4757,
+      "entranceRelativeY": 1373,
+      "exitRelativeX": 0,
+      "exitRelativeY": 1490,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835133020782",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "1"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 4757,
+            "height": 2980
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": -500,
+            "y": -500,
+            "width": 5757,
+            "height": 3980
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC00317683513359952"
+      ],
+      "portIncluded": false
+    },
+    {
+      "id": "FAC00317683513359952_0",
+      "width": 100,
+      "height": 100,
+      "facilityHeightDouble": 1,
+      "pathWidth": 2522,
+      "lineWidth": 2522,
+      "lineCount": 1,
+      "nextFacilityGroup": [],
+      "entranceRelativeX": 0,
+      "entranceRelativeY": 50,
+      "exitRelativeX": 100,
+      "exitRelativeY": 50,
+      "processGroup": "dock",
+      "type": "dockOut",
+      "facilityGroup": "FAC00317683513359952",
+      "mainFacility": true,
+      "areaMap": {
+        "FACILITY": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 100,
+            "height": 100
+          }
+        ]
+      }
+    },
+    {
+      "id": "FAC001176835162859881_0",
+      "width": 6451,
+      "height": 14106,
+      "facilityHeightDouble": 5,
+      "facilityWeightDouble": 3,
+      "dry": 35,
+      "pathWidth": 2522,
+      "lineCount": 1,
+      "lineWidth": 2522,
+      "entranceRelativeX": 6451,
+      "entranceRelativeY": 13099,
+      "exitRelativeX": 6451,
+      "exitRelativeY": 1008,
+      "processGroup": "PRC004",
+      "type": "production",
+      "facilityGroup": "FAC001176835162859881",
+      "confirmed": true,
+      "mainFacility": true,
+      "placeableAreaIds": [
+        "3"
+      ],
+      "areaMap": {
+        "EQUIPMENT_AREA": [
+          {
+            "x": 0,
+            "y": 0,
+            "width": 6451,
+            "height": 14106
+          }
+        ],
+        "VARIABLE_AREA": [
+          {
+            "x": -500,
+            "y": -500,
+            "width": 7451,
+            "height": 15106
+          },
+          {
+            "x": 4580,
+            "y": 2015,
+            "width": 1871,
+            "height": 10076
+          }
+        ]
+      },
+      "nextFacilityGroup": [
+        "FAC001176835133020782"
+      ],
+      "portIncluded": false
+    }
+  ],
+  "escapePoint": {
+    "x": -10000,
+    "y": -10000
+  },
+  "facilityGroups": [
+    {
+      "groupId": "FAC00317683512501771",
+      "facilities": [
+        "FAC00317683512501771_0"
+      ]
+    },
+    {
+      "groupId": "FAC001176835129530078",
+      "facilities": [
+        "FAC001176835129530078_0",
+        "FAC001176835129530078_1",
+        "FAC001176835129530078_2",
+        "FAC001176835129530078_3",
+        "FAC001176835129530078_4",
+        "FAC001176835129530078_5",
+        "FAC001176835129530078_6",
+        "FAC001176835129530078_7",
+        "FAC001176835129530078_8",
+        "FAC001176835129530078_9",
+        "FAC001176835129530078_10",
+        "FAC001176835129530078_11",
+        "FAC001176835129530078_12",
+        "FAC001176835129530078_13",
+        "FAC001176835129530078_14",
+        "FAC001176835129530078_15",
+        "FAC001176835129530078_16",
+        "FAC001176835129530078_17",
+        "FAC001176835129530078_18",
+        "FAC001176835129530078_19",
+        "FAC001176835129530078_20",
+        "FAC001176835129530078_21",
+        "FAC001176835129530078_22",
+        "FAC001176835129530078_23",
+        "FAC001176835129530078_24"
+      ]
+    },
+    {
+      "groupId": "FAC001176835130024879",
+      "facilities": [
+        "FAC001176835130024879_0"
+      ]
+    },
+    {
+      "groupId": "FAC001176835130560383",
+      "facilities": [
+        "FAC001176835130560383_0"
+      ]
+    },
+    {
+      "groupId": "FAC0011768351318869133",
+      "facilities": [
+        "FAC0011768351318869133_0",
+        "FAC0011768351318869133_1",
+        "FAC0011768351318869133_2",
+        "FAC0011768351318869133_3",
+        "FAC0011768351318869133_4",
+        "FAC0011768351318869133_5",
+        "FAC0011768351318869133_6",
+        "FAC0011768351318869133_7",
+        "FAC0011768351318869133_8",
+        "FAC0011768351318869133_9",
+        "FAC0011768351318869133_10",
+        "FAC0011768351318869133_11",
+        "FAC0011768351318869133_12",
+        "FAC0011768351318869133_13",
+        "FAC0011768351318869133_14",
+        "FAC0011768351318869133_15",
+        "FAC0011768351318869133_16",
+        "FAC0011768351318869133_17",
+        "FAC0011768351318869133_18",
+        "FAC0011768351318869133_19",
+        "FAC0011768351318869133_20",
+        "FAC0011768351318869133_21",
+        "FAC0011768351318869133_22",
+        "FAC0011768351318869133_23",
+        "FAC0011768351318869133_24",
+        "FAC0011768351318869133_25",
+        "FAC0011768351318869133_26",
+        "FAC0011768351318869133_27",
+        "FAC0011768351318869133_28",
+        "FAC0011768351318869133_29",
+        "FAC0011768351318869133_30",
+        "FAC0011768351318869133_31",
+        "FAC0011768351318869133_32",
+        "FAC0011768351318869133_33",
+        "FAC0011768351318869133_34",
+        "FAC0011768351318869133_35",
+        "FAC0011768351318869133_36",
+        "FAC0011768351318869133_37",
+        "FAC0011768351318869133_38",
+        "FAC0011768351318869133_39",
+        "FAC0011768351318869133_40",
+        "FAC0011768351318869133_41",
+        "FAC0011768351318869133_42"
+      ]
+    },
+    {
+      "groupId": "FAC001176835133020782",
+      "facilities": [
+        "FAC001176835133020782_0",
+        "FAC001176835133020782_1"
+      ]
+    },
+    {
+      "groupId": "FAC00317683513359952",
+      "facilities": [
+        "FAC00317683513359952_0"
+      ]
+    },
+    {
+      "groupId": "FAC001176835162859881",
+      "facilities": [
+        "FAC001176835162859881_0"
+      ]
+    }
+  ],
+  "restrictedAreas": [],
+  "columnAreas": [
+    {
+      "x": 71305,
+      "y": 29994,
+      "width": 394,
+      "height": 375
+    },
+    {
+      "x": 71511,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71511,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71460,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71460,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71304,
+      "y": 5607,
+      "width": 189,
+      "height": 381
+    },
+    {
+      "x": 71512,
+      "y": 5607,
+      "width": 189,
+      "height": 381
+    },
+    {
+      "x": 71512,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71512,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71459,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71459,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60039,
+      "y": 30002,
+      "width": 371,
+      "height": 359
+    },
+    {
+      "x": 60231,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60231,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60039,
+      "y": 5615,
+      "width": 371,
+      "height": 365
+    },
+    {
+      "x": 60231,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60231,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71316,
+      "y": 54383,
+      "width": 371,
+      "height": 310
+    },
+    {
+      "x": 71508,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71508,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71316,
+      "y": 54726,
+      "width": 371,
+      "height": 22
+    },
+    {
+      "x": 71462,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71462,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60040,
+      "y": 54388,
+      "width": 368,
+      "height": 305
+    },
+    {
+      "x": 60230,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60040,
+      "y": 54726,
+      "width": 368,
+      "height": 17
+    },
+    {
+      "x": 60185,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59126,
+      "y": 54388,
+      "width": 368,
+      "height": 305
+    },
+    {
+      "x": 59316,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59126,
+      "y": 54726,
+      "width": 368,
+      "height": 17
+    },
+    {
+      "x": 59271,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59124,
+      "y": 30002,
+      "width": 371,
+      "height": 359
+    },
+    {
+      "x": 59316,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59270,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59270,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59124,
+      "y": 5615,
+      "width": 371,
+      "height": 365
+    },
+    {
+      "x": 59316,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59270,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59270,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 46934,
+      "y": 54388,
+      "width": 368,
+      "height": 305
+    },
+    {
+      "x": 47124,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 46934,
+      "y": 54726,
+      "width": 368,
+      "height": 17
+    },
+    {
+      "x": 47079,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 46921,
+      "y": 29994,
+      "width": 394,
+      "height": 375
+    },
+    {
+      "x": 47127,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47127,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47076,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47076,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 46920,
+      "y": 5607,
+      "width": 397,
+      "height": 381
+    },
+    {
+      "x": 47128,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47128,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47075,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47075,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34742,
+      "y": 54388,
+      "width": 368,
+      "height": 305
+    },
+    {
+      "x": 34932,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34742,
+      "y": 54726,
+      "width": 368,
+      "height": 17
+    },
+    {
+      "x": 34887,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34729,
+      "y": 29994,
+      "width": 394,
+      "height": 375
+    },
+    {
+      "x": 34935,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34935,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34884,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34884,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22550,
+      "y": 54388,
+      "width": 368,
+      "height": 305
+    },
+    {
+      "x": 22740,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22550,
+      "y": 54726,
+      "width": 368,
+      "height": 17
+    },
+    {
+      "x": 22695,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22537,
+      "y": 29994,
+      "width": 394,
+      "height": 375
+    },
+    {
+      "x": 22743,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22743,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22692,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22692,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10358,
+      "y": 54388,
+      "width": 368,
+      "height": 305
+    },
+    {
+      "x": 10548,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10358,
+      "y": 54726,
+      "width": 368,
+      "height": 17
+    },
+    {
+      "x": 10503,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10345,
+      "y": 29994,
+      "width": 394,
+      "height": 375
+    },
+    {
+      "x": 10551,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10551,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10500,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10500,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1834,
+      "y": 54388,
+      "width": 368,
+      "height": 305
+    },
+    {
+      "x": -1644,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1834,
+      "y": 54726,
+      "width": 368,
+      "height": 17
+    },
+    {
+      "x": -1689,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1850,
+      "y": 29985,
+      "width": 400,
+      "height": 394
+    },
+    {
+      "x": -1639,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1639,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1694,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1694,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71501,
+      "y": 1048,
+      "width": 185,
+      "height": 356
+    },
+    {
+      "x": 71463,
+      "y": 1065,
+      "width": 21,
+      "height": 7
+    },
+    {
+      "x": 71311,
+      "y": 1048,
+      "width": 179,
+      "height": 356
+    },
+    {
+      "x": 71520,
+      "y": 1065,
+      "width": 21,
+      "height": 7
+    },
+    {
+      "x": 46920,
+      "y": 1035,
+      "width": 397,
+      "height": 381
+    },
+    {
+      "x": 47075,
+      "y": 1065,
+      "width": 21,
+      "height": 7
+    },
+    {
+      "x": 46920,
+      "y": 1035,
+      "width": 163,
+      "height": 30
+    },
+    {
+      "x": 47140,
+      "y": 1065,
+      "width": 21,
+      "height": 7
+    },
+    {
+      "x": 59112,
+      "y": 1035,
+      "width": 397,
+      "height": 381
+    },
+    {
+      "x": 59267,
+      "y": 1065,
+      "width": 21,
+      "height": 7
+    },
+    {
+      "x": 59112,
+      "y": 1035,
+      "width": 163,
+      "height": 30
+    },
+    {
+      "x": 59332,
+      "y": 1065,
+      "width": 21,
+      "height": 7
+    },
+    {
+      "x": 34728,
+      "y": 5607,
+      "width": 397,
+      "height": 381
+    },
+    {
+      "x": 34936,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34936,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34883,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34883,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34920,
+      "y": 1048,
+      "width": 190,
+      "height": 356
+    },
+    {
+      "x": 34887,
+      "y": 1065,
+      "width": 21,
+      "height": 7
+    },
+    {
+      "x": 34742,
+      "y": 1048,
+      "width": 145,
+      "height": 17
+    },
+    {
+      "x": 34944,
+      "y": 1065,
+      "width": 21,
+      "height": 7
+    },
+    {
+      "x": 22536,
+      "y": 5607,
+      "width": 397,
+      "height": 381
+    },
+    {
+      "x": 22744,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22744,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22691,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22691,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10344,
+      "y": 5607,
+      "width": 397,
+      "height": 381
+    },
+    {
+      "x": 10552,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10552,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10499,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10499,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1848,
+      "y": 5604,
+      "width": 397,
+      "height": 387
+    },
+    {
+      "x": -1640,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1640,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1694,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1694,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1834,
+      "y": 1048,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": -1689,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10358,
+      "y": 1048,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 10503,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22728,
+      "y": 1048,
+      "width": 190,
+      "height": 356
+    },
+    {
+      "x": 22550,
+      "y": 1386,
+      "width": 145,
+      "height": 17
+    },
+    {
+      "x": 22695,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22550,
+      "y": 1048,
+      "width": 145,
+      "height": 17
+    },
+    {
+      "x": 22740,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1834,
+      "y": 42196,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": -1644,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1834,
+      "y": 17812,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": -1644,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1644,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": -1689,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10358,
+      "y": 42196,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 10548,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10358,
+      "y": 17812,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 10548,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10548,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 10503,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22550,
+      "y": 42196,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 22740,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22550,
+      "y": 17812,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 22740,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22740,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 22695,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34742,
+      "y": 42196,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 34932,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34742,
+      "y": 17812,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 34932,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 46934,
+      "y": 42196,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 47124,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 46934,
+      "y": 17812,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 47124,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47124,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47079,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59126,
+      "y": 42196,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 59316,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59126,
+      "y": 17812,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 59316,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59316,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59271,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60040,
+      "y": 42196,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 60230,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60040,
+      "y": 17812,
+      "width": 368,
+      "height": 356
+    },
+    {
+      "x": 60230,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60230,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 60185,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71511,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71511,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71460,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71460,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71512,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71512,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71459,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71459,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71508,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71508,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71462,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71462,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71304,
+      "y": 17799,
+      "width": 189,
+      "height": 381
+    },
+    {
+      "x": 71512,
+      "y": 17799,
+      "width": 189,
+      "height": 381
+    },
+    {
+      "x": 71512,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71512,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71459,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71459,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71305,
+      "y": 42186,
+      "width": 394,
+      "height": 375
+    },
+    {
+      "x": 71511,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71511,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71460,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71460,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83497,
+      "y": 29994,
+      "width": 394,
+      "height": 375
+    },
+    {
+      "x": 83703,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83703,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83652,
+      "y": 30309,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83652,
+      "y": 30021,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83496,
+      "y": 5607,
+      "width": 189,
+      "height": 381
+    },
+    {
+      "x": 83704,
+      "y": 5607,
+      "width": 189,
+      "height": 381
+    },
+    {
+      "x": 83704,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83704,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83651,
+      "y": 5925,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83651,
+      "y": 5637,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83508,
+      "y": 54383,
+      "width": 371,
+      "height": 310
+    },
+    {
+      "x": 83700,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83700,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83508,
+      "y": 54726,
+      "width": 371,
+      "height": 22
+    },
+    {
+      "x": 83654,
+      "y": 54693,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83654,
+      "y": 54405,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83496,
+      "y": 17799,
+      "width": 189,
+      "height": 381
+    },
+    {
+      "x": 83704,
+      "y": 17799,
+      "width": 189,
+      "height": 381
+    },
+    {
+      "x": 83704,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83704,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83651,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83651,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83497,
+      "y": 42186,
+      "width": 394,
+      "height": 375
+    },
+    {
+      "x": 83703,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83703,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83652,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 83652,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71512,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71512,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71459,
+      "y": 18117,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71459,
+      "y": 17829,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71511,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71511,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71460,
+      "y": 42501,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71460,
+      "y": 42213,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34742,
+      "y": 1386,
+      "width": 145,
+      "height": 17
+    },
+    {
+      "x": 34887,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34887,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 34932,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47083,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47083,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47127,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 47127,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59275,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59275,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59319,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 59319,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71456,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71456,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71501,
+      "y": 1065,
+      "width": 33,
+      "height": 33
+    },
+    {
+      "x": 71501,
+      "y": 1353,
+      "width": 33,
+      "height": 33
+    }
+  ],
+  "mezzanineAreas": [],
+  "areaCeilings": [],
+  "areaWeights": [],
+  "areaDry": [],
+  "placeableAreas": [
+    {
+      "x": 0,
+      "y": 0,
+      "width": 10989,
+      "height": 54204,
+      "id": "1"
+    },
+    {
+      "x": 10989,
+      "y": 0,
+      "width": 69011,
+      "height": 54204,
+      "id": "2"
+    },
+    {
+      "x": 10989,
+      "y": 29793,
+      "width": 69011,
+      "height": 24411,
+      "id": "3"
+    }
+  ],
+  "fixedFacilityPositions": [
+    {
+      "facilityId": "FAC00317683512501771_0",
+      "position": {
+        "x": 1,
+        "y": 48000
+      },
+      "rotation": 0
+    },
+    {
+      "facilityId": "FAC00317683513359952_0",
+      "position": {
+        "x": 1,
+        "y": 23000
+      },
+      "rotation": 0
+    }
+  ],
+  "secondsSpentLimitSeconds": 84600,
+  "constraintWeights": {
+    "hardAvoidColumn": 1,
+    "hardFactoryBoundary": 1,
+    "hardFactoryBoundaryPassageOnly": 1,
+    "hardMezzanineAreas": 1,
+    "hardOverlapping": 0,
+    "hardPathOverlap": 1,
+    "hardRestrictedArea": 1,
+    "hardRestrictedAreaPassageOnly": 1,
+    "maintainMinimumSpacing": 1,
+    "maintainPassageSpacing": 1,
+    "maintainPortAreaSpacing": 1,
+    "noOverlappingSoft": 0,
+    "placeableAreaContainment": 1,
+    "softBoundaryDistancePenalty": 0,
+    "softCeilingHeight": 1,
+    "softColumnAlignment": 1,
+    "softDryArea": 1,
+    "softExtendedRegionOverlap": 1,
+    "softFacilityAlignment": 1,
+    "softGroupBoundingBoxIntrusion": 0,
+    "softGroupRegionAlignment": 1,
+    "softMinimizeFacilityGroup": 1,
+    "softMinimizeFactory": 1,
+    "softMinimizeGroupDistance": 1,
+    "softWeight": 1
+  }
+}

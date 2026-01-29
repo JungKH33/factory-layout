@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Factory Layout WebUI</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Factory Layout WebUI</h1>
+            <div class="session-info">
+                <span id="session-id">No session</span>
+                <span id="connection-status" class="status-disconnected">●</span>
+                <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">🌙</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Left Panel: Controls -->
+            <aside class="control-panel">
+                <section class="panel-section">
+                    <h3>Session</h3>
+                    <div class="form-group">
+                        <label>Environment Config:</label>
+                        <select id="env-config">
+                            <option value="converters/test.json">converters/test.json</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Wrapper:</label>
+                        <select id="wrapper-mode">
+                            <option value="greedyv3">Greedy V3</option>
+                            <option value="greedyv2">Greedy V2</option>
+                            <option value="greedy">Greedy V1</option>
+                            <option value="alphachip">AlphaChip</option>
+                            <option value="maskplace">MaskPlace</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Agent:</label>
+                        <select id="agent-mode">
+                            <option value="greedy">Greedy</option>
+                            <option value="alphachip">AlphaChip</option>
+                            <option value="maskplace">MaskPlace</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Search:</label>
+                        <select id="search-mode">
+                            <option value="none">None</option>
+                            <option value="mcts">MCTS</option>
+                            <option value="beam">Beam Search</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Top-K:</label>
+                        <input type="number" id="topk-k" value="50" min="1" max="200">
+                    </div>
+                    <button id="btn-create" class="btn btn-primary">Create Session</button>
+                </section>
+
+                <section class="panel-section">
+                    <h3>Actions</h3>
+                    <div class="btn-group">
+                        <button id="btn-reset" class="btn" disabled>Reset</button>
+                        <button id="btn-undo" class="btn" disabled>Undo</button>
+                        <button id="btn-redo" class="btn" disabled>Redo</button>
+                    </div>
+                </section>
+
+                <section class="panel-section">
+                    <h3>Search</h3>
+                    <div class="form-group">
+                        <label>Simulations:</label>
+                        <input type="number" id="search-sims" value="100" min="1" max="10000">
+                    </div>
+                    <div class="form-group">
+                        <label>Update Interval:</label>
+                        <input type="number" id="search-interval" value="10" min="1" max="100">
+                    </div>
+                    <button id="btn-search" class="btn btn-secondary" disabled>Run Search</button>
+                    <div id="search-progress" class="progress-bar" style="display: none;">
+                        <div class="progress-fill"></div>
+                        <span class="progress-text">0%</span>
+                    </div>
+                </section>
+
+                <section class="panel-section">
+                    <h3>Layers</h3>
+                    <div class="checkbox-group">
+                        <label class="layer-toggle">
+                            <input type="checkbox" id="show-candidates" checked>
+                            <span class="layer-color" style="background: #2ca02c;"></span>
+                            Candidates
+                        </label>
+                        <label class="layer-toggle">
+                            <input type="checkbox" id="show-flow" checked>
+                            <span class="layer-color" style="background: #1f77b4;"></span>
+                            Flow
+                        </label>
+                        <label class="layer-toggle">
+                            <input type="checkbox" id="show-forbidden">
+                            <span class="layer-color" style="background: #d62728; opacity: 0.3;"></span>
+                            Forbidden Area
+                        </label>
+                        <label class="layer-toggle">
+                            <input type="checkbox" id="show-placement-zones">
+                            <span class="layer-color" style="background: #1e90ff; opacity: 0.3;"></span>
+                            Placement Zones
+                        </label>
+                        <label class="layer-toggle">
+                            <input type="checkbox" id="show-weight-zones">
+                            <span class="layer-color" style="background: #1f77b4; opacity: 0.2;"></span>
+                            Weight Zones
+                        </label>
+                        <label class="layer-toggle">
+                            <input type="checkbox" id="show-dry-zones">
+                            <span class="layer-color" style="background: #2ca02c; opacity: 0.2;"></span>
+                            Dry Zones
+                        </label>
+                        <label class="layer-toggle">
+                            <input type="checkbox" id="show-height-zones">
+                            <span class="layer-color" style="background: #7f7f7f; opacity: 0.2;"></span>
+                            Height Zones
+                        </label>
+                    </div>
+                </section>
+
+                <section class="panel-section">
+                    <h3>Display</h3>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" id="show-scores" checked> Score Colors</label>
+                        <label><input type="checkbox" id="show-visits"> Visit Size</label>
+                        <label><input type="checkbox" id="show-labels" checked> Labels</label>
+                        <label><input type="checkbox" id="show-grid"> Grid Lines</label>
+                    </div>
+                </section>
+            </aside>
+
+            <!-- Center: Canvas -->
+            <main class="canvas-area">
+                <canvas id="layout-canvas"></canvas>
+                <div class="canvas-overlay">
+                    <div id="hover-info" class="hover-info" style="display: none;"></div>
+                </div>
+            </main>
+
+            <!-- Right Panel: Info -->
+            <aside class="info-panel">
+                <section class="panel-section">
+                    <h3>State</h3>
+                    <div id="state-info">
+                        <div class="info-row"><span>Step:</span><span id="info-step">-</span></div>
+                        <div class="info-row"><span>Cost:</span><span id="info-cost">-</span></div>
+                        <div class="info-row"><span>Value:</span><span id="info-value">-</span></div>
+                        <div class="info-row"><span>Remaining:</span><span id="info-remaining">-</span></div>
+                        <div class="info-row"><span>Current:</span><span id="info-current">-</span></div>
+                    </div>
+                </section>
+
+                <section class="panel-section">
+                    <h3>Candidates <span id="candidate-count">(0)</span></h3>
+                    <div id="candidate-list" class="candidate-list"></div>
+                </section>
+            </aside>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

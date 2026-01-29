@@ -65,9 +65,8 @@ class GreedyAgent:
         return int(valid_idx[best_k].item()) if int(valid_idx.numel()) > 0 else 0
 
     def value(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> float:
-        # Leaf value for MCTS: higher is better, so negate the (positive) cost.
-        # Keep it consistent with env reward scaling.
-        return -float(env.cal_obj()) / float(env.reward_scale)
+        # Leaf value for MCTS: 현재 상태의 예상 최종 reward
+        return env.estimate_terminal_reward()
 
 
 if __name__ == "__main__":

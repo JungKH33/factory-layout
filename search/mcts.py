@@ -4,11 +4,13 @@ import math
 from dataclasses import dataclass
 from typing import Dict, Optional, List
 
+import numpy as np
 import torch
 
 from envs.wrappers.base import BaseWrapper
 from envs.wrappers.candidate_set import CandidateSet
 from agents.base import Agent
+from search.base import BaseSearch, SearchProgress, SearchResult, TopKTracker
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,9 @@ class MCTSConfig:
     pw_c: float = 1.5
     pw_alpha: float = 0.5
     pw_min_children: int = 1
+    # Top-K tracking: 0이면 비활성화
+    track_top_k: int = 0
+    track_verbose: bool = False  # True면 리스트 변경 시 print
 
 
 class _Node:
@@ -126,11 +131,19 @@ class _Node:
         return best_act
 
 
-class MCTSSearch:
+class MCTSSearch(BaseSearch):
     """MCTS over wrapper env (Discrete + action_mask + snapshot) using Agent priors."""
 
     def __init__(self, *, config: MCTSConfig):
+        super().__init__()
         self.config = config
+        # Initialize top-K tracker if enabled
+        if self.config.track_top_k > 0:
+            self.top_tracker = TopKTracker(
+                k=self.config.track_top_k, verbose=self.config.track_verbose
+            )
+        else:
+            self.top_tracker = None
 
     def select(
         self,
@@ -154,8 +167,20 @@ class MCTSSearch:
             terminal=False,
         )
 
-        for _ in range(int(self.config.num_simulations)):
+        # Only compute numpy arrays if callback is set (avoid overhead when not needed)
+        has_callback = self._progress_callback is not None
+        if has_callback:
+            n_actions = int(root_candidates.mask.shape[0])
+            mask_np = root_candidates.mask.detach().cpu().numpy().astype(bool)
+
+        num_sims = int(self.config.num_simulations)
+        for sim in range(num_sims):
             self._simulate(env=env, root=root, agent=agent)
+            
+            # Emit progress at intervals (only if callback is set)
+            if has_callback:
+                if (sim + 1) % self._progress_interval == 0 or sim == num_sims - 1:
+                    self._emit_mcts_progress(root, sim + 1, num_sims, n_actions, mask_np)
 
         if not root.children:
             env.set_snapshot(root_snapshot)
@@ -183,6 +208,53 @@ class MCTSSearch:
                     best_action = int(acts[idx])
         env.set_snapshot(root_snapshot)
         return int(best_action)
+
+    def _emit_mcts_progress(
+        self,
+        root: _Node,
+        iteration: int,
+        total: int,
+        n_actions: int,
+        mask: np.ndarray,
+    ) -> None:
+        """Extract visit counts and Q-values from root and emit progress."""
+        visits = np.zeros(n_actions, dtype=np.int32)
+        values = np.zeros(n_actions, dtype=np.float32)
+        
+        for act, child in root.children.items():
+            if 0 <= act < n_actions:
+                visits[act] = child.visits
+                values[act] = child.total_value / max(1, child.visits)
+        
+        # Find best action by visit count among valid actions
+        valid_visits = np.where(mask, visits, -1)
+        best_action = int(np.argmax(valid_visits))
+        best_value = float(values[best_action]) if best_action < len(values) else 0.0
+        
+        progress = SearchProgress(
+            iteration=iteration,
+            total=total,
+            visits=visits,
+            values=values,
+            best_action=best_action,
+            best_value=best_value,
+            extra={"root_visits": root.visits, "root_value": root.total_value / max(1, root.visits)},
+        )
+        self._emit_progress(progress)
+
+    def _track_terminal(self, env: BaseWrapper, cum_reward: float) -> None:
+        """Track terminal state if tracking is enabled."""
+        if self.top_tracker is None:
+            return
+        # cal_total_cost(): objective + 미배치 페널티 포함
+        cost = env.engine.cal_total_cost()
+        positions = {str(gid): pos for gid, pos in env.engine.positions.items()}
+        self.top_tracker.add(SearchResult(
+            cost=cost,
+            cum_reward=cum_reward,
+            positions=positions,
+            snapshot=env.get_snapshot(),
+        ))
 
     def _apply_root_dirichlet(self, *, priors: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         eps = float(self.config.dirichlet_epsilon)
@@ -292,6 +364,11 @@ class MCTSSearch:
                 node = child
                 path_nodes.append(node)
                 path_rewards.append(float(reward))
+
+                # Track terminal state (expansion 시점)
+                if child.terminal:
+                    cum_reward = sum(path_rewards)
+                    self._track_terminal(env, cum_reward)
                 break
 
         leaf_value = 0.0
@@ -346,12 +423,16 @@ class MCTSSearch:
             if int(candidates.mask.to(torch.int64).sum().item()) == 0:
                 _obs2, reward, terminated, truncated, _ = env.step(int(0))
                 total += float(reward)
+                # Track terminal during rollout
+                self._track_terminal(env, total)
                 break
 
             a = agent.select_action(env=env.engine, obs=obs, candidates=candidates)
             _obs2, reward, terminated, truncated, _ = env.step(int(a))
             total += float(reward)
             if terminated or truncated:
+                # Track terminal during rollout
+                self._track_terminal(env, total)
                 break
         return float(total)
 

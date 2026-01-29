@@ -28,6 +28,7 @@ from envs.wrappers.candidate_set import CandidateSet
 
 # --- config (module-level constants, keep simple) ---
 ENV_JSON: str = "env_configs/zones_01.json"
+ENV_JSON: str = "converters/test.json"
 WRAPPER_MODE: str = "greedyv3"  # "greedy" | "alphachip" | "maskplace"
 AGENT_MODE: str = "greedy"  # "greedy" | "alphachip" | "maskplace"
 ALPHACHIP_CHECKPOINT_PATH: str | None = r"D:\developments\Projects\factory-layout\results\checkpoints\2026-01-26_00-50_b156aa\best.ckpt"
@@ -41,7 +42,7 @@ ALPHACHIP_GRID: int = 128
 SEARCH_MODE: str = "mcts"  # "none" | "mcts"
 MCTS_SIMS: int = 1000
 MCTS_ROLLOUT_ENABLED: bool = True
-ROLLOUT_DEPTH: int = 5
+ROLLOUT_DEPTH: int = 10
 
 MCTS_TEMPERATURE: float = 0.0
 # Progressive widening (useful for large action spaces, e.g. maskplace)
@@ -52,6 +53,10 @@ MCTS_PW_MIN_CHILDREN: int = 1
 BEAM_WIDTH: int = 8
 BEAM_DEPTH: int = 5
 BEAM_EXPANSION_TOPK: int = 16
+
+# Top-K tracking: search 중 최고 결과 K개 저장
+TRACK_TOP_K: int = 5  # 0이면 비활성화
+TRACK_VERBOSE: bool = True  # 리스트 변경 시 print
 
 SHOW_FLOW: bool = True
 SHOW_SCORE: bool = True
@@ -125,10 +130,24 @@ def main() -> None:
         search = None
     elif SEARCH_MODE == "mcts":
         search = MCTSSearch(
-            config=MCTSConfig(num_simulations=MCTS_SIMS, rollout_enabled=bool(MCTS_ROLLOUT_ENABLED), rollout_depth=int(ROLLOUT_DEPTH))
+            config=MCTSConfig(
+                num_simulations=MCTS_SIMS,
+                rollout_enabled=bool(MCTS_ROLLOUT_ENABLED),
+                rollout_depth=int(ROLLOUT_DEPTH),
+                track_top_k=TRACK_TOP_K,
+                track_verbose=TRACK_VERBOSE,
+            )
         )
     elif SEARCH_MODE == "beam":
-        search = BeamSearch(config=BeamConfig(beam_width=BEAM_WIDTH, depth=BEAM_DEPTH, expansion_topk=BEAM_EXPANSION_TOPK))
+        search = BeamSearch(
+            config=BeamConfig(
+                beam_width=BEAM_WIDTH,
+                depth=BEAM_DEPTH,
+                expansion_topk=BEAM_EXPANSION_TOPK,
+                track_top_k=TRACK_TOP_K,
+                track_verbose=TRACK_VERBOSE,
+            )
+        )
     else:
         raise ValueError(f"Unknown SEARCH_MODE={SEARCH_MODE!r} (expected 'none'|'mcts'|'beam')")
 
@@ -201,12 +220,20 @@ def main() -> None:
             reason = info.get("reason", None)
             print(
                 f"[env] end: terminated={terminated} truncated={truncated} "
-                f"step={step} placed={len(env.engine.placed)} cost={env.engine.cal_obj():.3f} reason={reason}"
+                f"step={step} placed={len(env.engine.placed)} cost={env.engine.cal_total_cost():.3f} reason={reason}"
             )
 
     end = time.perf_counter()
     print(f"Total computation time: {end - start:.4f} seconds")
     print(f"episode_reward={total_reward:.3f} terminated={terminated} truncated={truncated}")
+
+    # Print top-K results if tracking was enabled
+    if search is not None and hasattr(search, "top_tracker") and search.top_tracker is not None:
+        top_results = search.top_tracker.get_results()
+        if top_results:
+            print(f"\n[Top-{len(top_results)} Search Results]")
+            for i, result in enumerate(top_results):
+                print(f"  #{i+1}: cost={result.cost:.2f}, placed={len(result.positions)}, cum_reward={result.cum_reward:.3f}")
 
     out_dir = Path("results") / "inference"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -230,10 +257,27 @@ def main() -> None:
         show_flow=SHOW_FLOW,
         show_score=SHOW_SCORE,
         show_zones=False,
-        candidate_set= None,
+        candidate_set=None,
         save_path=str(out_path),
     )
     print(f"saved_layout={out_path}")
+
+    # Save top-K results if tracking was enabled
+    if search is not None and hasattr(search, "top_tracker") and search.top_tracker is not None:
+        top_results = search.top_tracker.get_results()
+        for i, result in enumerate(top_results):
+            env.set_snapshot(result.snapshot)
+            top_path = out_dir / f"{ts}_top{i+1}_cost{result.cost:.1f}.png"
+            save_layout(
+                env,
+                show_masks=SHOW_MASKS,
+                show_flow=SHOW_FLOW,
+                show_score=SHOW_SCORE,
+                show_zones=False,
+                candidate_set=None,
+                save_path=str(top_path),
+            )
+            print(f"saved_top_{i+1}={top_path}")
 
 
 if __name__ == "__main__":
