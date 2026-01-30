@@ -8,6 +8,7 @@ import torch
 
 from envs.json_loader import load_env
 from envs.visualizer import plot_layout, save_layout, browse_steps, StepFrame
+from postprocess import RoutePlanner
 
 from pipeline import DecisionPipeline
 from search.beam import BeamConfig, BeamSearch
@@ -27,8 +28,8 @@ from envs.wrappers.candidate_set import CandidateSet
 
 
 # --- config (module-level constants, keep simple) ---
-ENV_JSON: str = "env_configs/zones_01.json"
-ENV_JSON: str = "converters/test.json"
+ENV_JSON: str = "env_configs/clearance_03.json"
+ENV_JSON: str = "preprocess/test.json"
 WRAPPER_MODE: str = "greedyv3"  # "greedy" | "alphachip" | "maskplace"
 AGENT_MODE: str = "greedy"  # "greedy" | "alphachip" | "maskplace"
 ALPHACHIP_CHECKPOINT_PATH: str | None = r"D:\developments\Projects\factory-layout\results\checkpoints\2026-01-26_00-50_b156aa\best.ckpt"
@@ -248,8 +249,12 @@ def main() -> None:
         browse_steps(env, frames=frames, title="Inference browser (←/→ to navigate, q to quit)")
         env.set_snapshot(final_snap)
 
+    # Route planning
+    planner = RoutePlanner(env.engine, algorithm="astar")
+    routes = planner.plan_all()
+
     # Preview before saving (interactive; close the window to continue).
-    plot_layout(env, candidate_set= None)
+    plot_layout(env, candidate_set=None, routes=routes)
 
     save_layout(
         env,

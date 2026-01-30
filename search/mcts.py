@@ -16,7 +16,7 @@ from search.base import BaseSearch, SearchProgress, SearchResult, TopKTracker
 @dataclass(frozen=True)
 class MCTSConfig:
     num_simulations: int = 50
-    c_puct: float = 0.5
+    c_puct: float = 2.0
     # Rollout control:
     # - rollout_enabled=True  => run rollouts of `rollout_depth`
     # - rollout_enabled=False => no rollout; evaluate leaf via agent.value()

@@ -73,14 +73,16 @@ def extract_clearance_from_variable_area(fac: Dict) -> Tuple[float, float, float
     # UL: min x (negative means left extension)
     min_x = float("inf")
     for va in variable_areas:
-        if va.get("x", 0) >= 0 and va.get("y", 0) >= 0:
+        # Notebook parity: only consider VARIABLE_AREA in (x<=0, y<=0) quadrant.
+        # (Notebook condition was: -x>=0 and -y>=0)
+        if va.get("x", 0) <= 0 and va.get("y", 0) <= 0:
             min_x = min(min_x, va.get("x", 0))
     UL = -min_x if min_x != float("inf") and min_x < 0 else 0.0
     
     # UR: max (x + width) beyond facility width
     max_x_right = -float("inf")
     for va in variable_areas:
-        if va.get("x", 0) >= 0 and va.get("y", 0) >= 0:
+        if va.get("x", 0) <= 0 and va.get("y", 0) <= 0:
             right_edge = va.get("x", 0) + va.get("width", 0)
             max_x_right = max(max_x_right, right_edge)
     UR = max(0.0, max_x_right - fac_width) if max_x_right != -float("inf") else 0.0
@@ -88,14 +90,14 @@ def extract_clearance_from_variable_area(fac: Dict) -> Tuple[float, float, float
     # UB: min y (negative means bottom extension)
     min_y = float("inf")
     for va in variable_areas:
-        if va.get("x", 0) >= 0 and va.get("y", 0) >= 0:
+        if va.get("x", 0) <= 0 and va.get("y", 0) <= 0:
             min_y = min(min_y, va.get("y", 0))
     UB = -min_y if min_y != float("inf") and min_y < 0 else 0.0
     
     # UA: max (y + height) beyond facility height
     max_y_top = -float("inf")
     for va in variable_areas:
-        if va.get("x", 0) >= 0 and va.get("y", 0) >= 0:
+        if va.get("x", 0) <= 0 and va.get("y", 0) <= 0:
             top_edge = va.get("y", 0) + va.get("height", 0)
             max_y_top = max(max_y_top, top_edge)
     UA = max(0.0, max_y_top - fac_height) if max_y_top != -float("inf") else 0.0

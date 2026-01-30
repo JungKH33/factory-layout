@@ -40,6 +40,7 @@ class GreedyWrapperV2Env(BaseWrapper):
         diversity_ratio: float = 0.0,  # parity (unused)
         min_diversity: int = 0,  # parity (unused)
         random_seed: Optional[int] = None,
+        optimize_rotation: bool = False,
     ):
         super().__init__(engine=engine)
         self.k = int(k)
@@ -48,6 +49,7 @@ class GreedyWrapperV2Env(BaseWrapper):
         self.p_high = float(p_high)
         self.p_near = float(p_near)
         self.p_coarse = float(p_coarse)
+        self.optimize_rotation = optimize_rotation
         self.oversample_factor = int(oversample_factor)
         self.diversity_ratio = float(diversity_ratio)
         self.min_diversity = int(min_diversity)
@@ -557,6 +559,8 @@ class GreedyWrapperV2Env(BaseWrapper):
         ]
 
         final = valid_candidates[: self.k]
+        if self.optimize_rotation:
+            final = self._optimize_rotation(env, gid, final)
         mask = torch.zeros((self.k,), dtype=torch.bool, device=device)
         if final:
             mask[: len(final)] = True
@@ -620,12 +624,34 @@ class GreedyWrapperV2Env(BaseWrapper):
         final.extend(self._random_take(pools[3], n_rand))
 
         final = final[: self.k]
+        if self.optimize_rotation:
+            final = self._optimize_rotation(env, next_group_id, final)
         mask = torch.zeros((self.k,), dtype=torch.bool, device=device)
         if final:
             mask[: len(final)] = True
         if len(final) < self.k:
             final.extend(self._pad_candidates(next_group_id, self.k - len(final)))
         return final, mask
+
+    def _optimize_rotation(
+        self, env: FactoryLayoutEnv, gid: GroupId, candidates: List[Tuple[GroupId, int, int, int]]
+    ) -> List[Tuple[GroupId, int, int, int]]:
+        """0 vs 180, 90 vs 270 중 점수가 더 좋은 회전을 선택"""
+        if not candidates:
+            return candidates
+
+        x = torch.tensor([c[1] for c in candidates], device=env.device)
+        y = torch.tensor([c[2] for c in candidates], device=env.device)
+        rot_orig = torch.tensor([c[3] for c in candidates], device=env.device)
+        rot_alt = (rot_orig + 180) % 360
+
+        scores_orig = env.estimate_delta_obj(gid=gid, x=x, y=y, rot=rot_orig)
+        scores_alt = env.estimate_delta_obj(gid=gid, x=x, y=y, rot=rot_alt)
+
+        use_alt = scores_alt < scores_orig
+        final_rot = torch.where(use_alt, rot_alt, rot_orig)
+
+        return [(c[0], c[1], c[2], int(final_rot[i].item())) for i, c in enumerate(candidates)]
 
 
 if __name__ == "__main__":

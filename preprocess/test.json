@@ -82,10 +82,10 @@
       "ent_rel_y": 60.46,
       "exi_rel_x": 29.59,
       "exi_rel_y": -60.45,
-      "facility_clearance_left": 0,
+      "facility_clearance_left": 5,
       "facility_clearance_right": 25,
-      "facility_clearance_bottom": 0,
-      "facility_clearance_top": 0,
+      "facility_clearance_bottom": 5,
+      "facility_clearance_top": 5,
       "facility_height": 5,
       "facility_weight": 3,
       "facility_dry": 35,
@@ -104,10 +104,10 @@
       "_processGroup": "PRC004",
       "_pathWidth": 25.22,
       "_raw_clearance": {
-        "UL": 0.0,
+        "UL": 5.0,
         "UR": 25.22,
-        "UB": 0.0,
-        "UA": 0.0
+        "UB": 5.0,
+        "UA": 5.0
       }
     },
     "FAC001176835130560383": {
@@ -120,8 +120,8 @@
       "exi_rel_y": -31.27,
       "facility_clearance_left": 25,
       "facility_clearance_right": 25,
-      "facility_clearance_bottom": 0,
-      "facility_clearance_top": 0,
+      "facility_clearance_bottom": 5,
+      "facility_clearance_top": 5,
       "facility_height": 5,
       "facility_weight": 3,
       "facility_dry": 35,
@@ -140,8 +140,8 @@
       "_raw_clearance": {
         "UL": 25.22,
         "UR": 25.22,
-        "UB": 0.0,
-        "UA": 0.0
+        "UB": 5.0,
+        "UA": 5.0
       }
     },
     "FAC0011768351318869133": {
@@ -154,7 +154,7 @@
       "exi_rel_y": 16.325,
       "facility_clearance_left": 0,
       "facility_clearance_right": 0,
-      "facility_clearance_bottom": 0,
+      "facility_clearance_bottom": 15,
       "facility_clearance_top": 25,
       "facility_height": 5,
       "facility_weight": 3,
@@ -174,7 +174,7 @@
       "_raw_clearance": {
         "UL": 0.0,
         "UR": 0.0,
-        "UB": 0.0,
+        "UB": 15.0,
         "UA": 25.22
       }
     },
@@ -188,8 +188,8 @@
       "exi_rel_y": 0.0,
       "facility_clearance_left": 25,
       "facility_clearance_right": 25,
-      "facility_clearance_bottom": 0,
-      "facility_clearance_top": 0,
+      "facility_clearance_bottom": 5,
+      "facility_clearance_top": 5,
       "facility_height": 5,
       "facility_weight": 3,
       "facility_dry": 35,
@@ -208,8 +208,8 @@
       "_raw_clearance": {
         "UL": 25.22,
         "UR": 25.22,
-        "UB": 0.0,
-        "UA": 0.0
+        "UB": 5.0,
+        "UA": 5.0
       }
     },
     "FAC00317683513359952": {
@@ -249,10 +249,10 @@
       "ent_rel_y": 60.46,
       "exi_rel_x": 32.255,
       "exi_rel_y": -60.45,
-      "facility_clearance_left": 0,
+      "facility_clearance_left": 5,
       "facility_clearance_right": 25,
-      "facility_clearance_bottom": 0,
-      "facility_clearance_top": 0,
+      "facility_clearance_bottom": 5,
+      "facility_clearance_top": 5,
       "facility_height": 5,
       "facility_weight": 3,
       "facility_dry": 35,
@@ -269,10 +269,10 @@
       "_processGroup": "PRC004",
       "_pathWidth": 25.22,
       "_raw_clearance": {
-        "UL": 0.0,
+        "UL": 5.0,
         "UR": 25.22,
-        "UB": 0.0,
-        "UA": 0.0
+        "UB": 5.0,
+        "UA": 5.0
       }
     }
   },

@@ -44,6 +44,7 @@ def _default_layer_visibility() -> dict[str, bool]:
     # - forbidden masks ON
     # - engine-internal invalid/clearance OFF (toggle when debugging)
     # - flow/score/candidates ON
+    # - routes ON (if provided)
     return {
         "forbidden_areas": True,
         "invalid_mask": False,
@@ -51,6 +52,7 @@ def _default_layer_visibility() -> dict[str, bool]:
         "flow": True,
         "score": True,
         "candidates": True,
+        "routes": True,
         "weight_zones": True,
         "dry_zones": True,
         "height_zones": True,
@@ -74,6 +76,7 @@ def _legend_proxies() -> list[Any]:
         Line2D([0], [0], color="blue", lw=1.5, alpha=0.3, label="flow"),
         Line2D([0], [0], color="black", lw=0.0, marker="s", markersize=8, label="score"),
         Line2D([0], [0], color="green", lw=0.0, marker="o", markersize=6, alpha=0.65, label="candidates"),
+        Line2D([0], [0], color="orange", lw=2.0, alpha=0.8, label="routes"),
         patches.Patch(facecolor="#1f77b4", edgecolor="#1f77b4", alpha=0.08, label="weight_zones"),
         patches.Patch(facecolor="#2ca02c", edgecolor="#2ca02c", alpha=0.06, label="dry_zones"),
         patches.Patch(facecolor="#7f7f7f", edgecolor="#7f7f7f", alpha=0.04, label="height_zones"),
@@ -164,8 +167,9 @@ def _draw_layout_layers(
     ax: plt.Axes,
     engine: Any,
     candidate_set: Optional[CandidateSet] = None,
+    routes: Optional[list[Any]] = None,
 ) -> dict[str, list[Any]]:
-    """Draw the same base layers used by plot_layout (zones/masks/layout/flow/score/candidates)."""
+    """Draw the same base layers used by plot_layout (zones/masks/layout/flow/score/candidates/routes)."""
     zone_artists: dict[str, list[Any]] = {"weight": [], "dry": [], "height": [], "placement": [], "forbidden": []}
     misc_artists: dict[str, list[Any]] = {
         "invalid_mask": [],
@@ -173,6 +177,7 @@ def _draw_layout_layers(
         "flow": [],
         "score": [],
         "candidates": [],
+        "routes": [],
     }
 
     def _add_zone_rect(
@@ -393,6 +398,16 @@ def _draw_layout_layers(
     score_text.set_visible(True)
     misc_artists["score"].append(score_text)
 
+    # routes overlay (from postprocess.pathfinder)
+    if routes is not None:
+        route_arts = _plot_routes_overlay(ax, routes)
+        for a in route_arts:
+            try:
+                a.set_visible(True)
+            except Exception:
+                pass
+        misc_artists["routes"].extend(route_arts)
+
     return {
         "forbidden_areas": zone_artists["forbidden"],
         "invalid_mask": misc_artists["invalid_mask"],
@@ -400,6 +415,7 @@ def _draw_layout_layers(
         "flow": misc_artists["flow"],
         "score": misc_artists["score"],
         "candidates": misc_artists["candidates"],
+        "routes": misc_artists["routes"],
         "weight_zones": zone_artists["weight"],
         "dry_zones": zone_artists["dry"],
         "height_zones": zone_artists["height"],
@@ -407,11 +423,16 @@ def _draw_layout_layers(
     }
 
 
-def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> None:
+def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None, routes: Optional[list[Any]] = None) -> None:
     """Interactive viewer (dynamic toggles only).
 
     - No save_path/show_* args here on purpose: use `save_layout(...)` for saving.
     - This function always opens a window and lets you toggle layers via CheckButtons.
+    
+    Args:
+        env: FactoryLayoutEnv or wrapper
+        candidate_set: Optional candidate set to display
+        routes: Optional list of RouteResult from postprocess.pathfinder
     """
     # Support both engine (`FactoryLayoutEnv`) and wrapper envs by unwrapping.
     engine = getattr(env, "engine", env)
@@ -427,7 +448,7 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None) -> No
     ax.set_aspect("equal")
     ax.set_title("FactoryLayoutEnv")
 
-    groups = _draw_layout_layers(ax=ax, engine=engine, candidate_set=candidate_set)
+    groups = _draw_layout_layers(ax=ax, engine=engine, candidate_set=candidate_set, routes=routes)
     layer_vis = _default_layer_visibility()
     _apply_layer_visibility(groups, layer_vis)
     _install_click_legend(fig=fig, ax=ax, groups=groups, vis=layer_vis, legend_ax=ax_leg)
@@ -866,6 +887,63 @@ def _plot_flow_overlay(ax: plt.Axes, env) -> list[Any]:
                 arrowprops=dict(arrowstyle="-|>", color="blue", lw=0.8, alpha=0.3),
             )
             arts.append(ann)
+    return arts
+
+
+def _plot_routes_overlay(ax: plt.Axes, routes: list[Any]) -> list[Any]:
+    """Draw routes from postprocess.pathfinder.RouteResult list.
+    
+    Args:
+        ax: matplotlib Axes
+        routes: List of RouteResult objects (from RoutePlanner.plan_all_routes())
+    
+    Returns:
+        List of artist objects for layer toggling
+    """
+    arts: list[Any] = []
+    
+    # Color palette for different routes
+    colors = ["#FF6B00", "#00CC66", "#9933FF", "#FF3366", "#00BFFF", "#FFD700", "#FF69B4", "#32CD32"]
+    
+    for i, route in enumerate(routes):
+        if not route.success or route.path is None:
+            continue
+        
+        path = route.path
+        if len(path) < 2:
+            continue
+        
+        color = colors[i % len(colors)]
+        
+        # Draw path as polyline
+        xs = [p[0] for p in path]
+        ys = [p[1] for p in path]
+        line, = ax.plot(xs, ys, color=color, lw=2.0, alpha=0.8, zorder=10)
+        arts.append(line)
+        
+        # Draw start marker (exit point)
+        start_marker = ax.scatter([xs[0]], [ys[0]], s=50, c=color, marker="o", edgecolors="white", linewidths=1, zorder=11)
+        arts.append(start_marker)
+        
+        # Draw end marker (entry point) with arrow
+        end_marker = ax.scatter([xs[-1]], [ys[-1]], s=80, c=color, marker=">", edgecolors="white", linewidths=1, zorder=11)
+        arts.append(end_marker)
+        
+        # Label at midpoint
+        mid_idx = len(path) // 2
+        mid_x, mid_y = path[mid_idx]
+        label = ax.text(
+            mid_x, mid_y,
+            f"{route.src_group}→{route.dst_group}",
+            fontsize=7,
+            color=color,
+            ha="center",
+            va="bottom",
+            bbox=dict(boxstyle="round,pad=0.1", facecolor="white", alpha=0.7, linewidth=0),
+            zorder=12,
+        )
+        arts.append(label)
+    
     return arts
 
 
