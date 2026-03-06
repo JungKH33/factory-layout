@@ -13,20 +13,21 @@ import networkx as nx
 
 from typing import Any
 
-from envs.wrappers.candidate_set import CandidateSet
+from envs.action_space import ActionSpace as CandidateSet
+from envs.state import EnvState
 
 
 @dataclass(frozen=True)
 class StepFrame:
     """A single step frame for interactive browsing."""
 
-    snapshot: dict[str, object]  # wrapper.get_snapshot()
-    candidates: CandidateSet
-    scores: "np.ndarray"  # float [N] (same length as candidates.xyrot)
-    selected_action: int
-    value: float
+    state: Any  # engine/wrapper state copy
     cost: float
     step_idx: int
+    action_space: Optional[CandidateSet] = None
+    scores: Optional["np.ndarray"] = None  # float [N] (same length as action_space.xyrot)
+    selected_action: Optional[int] = None
+    value: Optional[float] = None
 
 
 def _set_visible_group(group: list[Any], v: bool) -> None:
@@ -42,7 +43,7 @@ def _default_layer_visibility() -> dict[str, bool]:
     # - zones ON
     # - forbidden masks ON
     # - engine-internal invalid/clearance OFF (toggle when debugging)
-    # - flow/score/candidates ON
+    # - flow/score/action_space ON
     # - routes ON (if provided)
     return {
         "forbidden_areas": True,
@@ -50,7 +51,7 @@ def _default_layer_visibility() -> dict[str, bool]:
         "clearance_mask": False,
         "flow": True,
         "score": True,
-        "candidates": True,
+        "action_space": True,
         "routes": True,
         "weight_zones": True,
         "dry_zones": True,
@@ -74,7 +75,7 @@ def _legend_proxies() -> list[Any]:
         patches.Patch(facecolor="#ff6b6b", edgecolor="#ff6b6b", alpha=0.10, label="clearance_mask"),
         Line2D([0], [0], color="blue", lw=1.5, alpha=0.3, label="flow"),
         Line2D([0], [0], color="black", lw=0.0, marker="s", markersize=8, label="score"),
-        Line2D([0], [0], color="green", lw=0.0, marker="o", markersize=6, alpha=0.65, label="candidates"),
+        Line2D([0], [0], color="green", lw=0.0, marker="o", markersize=6, alpha=0.65, label="action_space"),
         Line2D([0], [0], color="orange", lw=2.0, alpha=0.8, label="routes"),
         patches.Patch(facecolor="#1f77b4", edgecolor="#1f77b4", alpha=0.08, label="weight_zones"),
         patches.Patch(facecolor="#2ca02c", edgecolor="#2ca02c", alpha=0.06, label="dry_zones"),
@@ -165,17 +166,17 @@ def _draw_layout_layers(
     *,
     ax: plt.Axes,
     engine: Any,
-    candidate_set: Optional[CandidateSet] = None,
+    action_space: Optional[CandidateSet] = None,
     routes: Optional[list[Any]] = None,
 ) -> dict[str, list[Any]]:
-    """Draw the same base layers used by plot_layout (zones/masks/layout/flow/score/candidates/routes)."""
+    """Draw the same base layers used by plot_layout (zones/masks/layout/flow/score/action_space/routes)."""
     zone_artists: dict[str, list[Any]] = {"weight": [], "dry": [], "height": [], "placement": [], "forbidden": []}
     misc_artists: dict[str, list[Any]] = {
         "invalid_mask": [],
         "clearance_mask": [],
         "flow": [],
         "score": [],
-        "candidates": [],
+        "action_space": [],
         "routes": [],
     }
 
@@ -337,8 +338,8 @@ def _draw_layout_layers(
             misc_artists["clearance_mask"].append(mc2)
 
     # placed rects/labels
-    for gid in getattr(engine, "placed", []):
-        p = engine.placements[gid]
+    for gid in engine.get_state().placed:
+        p = engine.get_state().placements[gid]
         rect = patches.Rectangle(
             (float(p.x_bl), float(p.y_bl)),
             float(p.w),
@@ -351,13 +352,13 @@ def _draw_layout_layers(
         ax.add_patch(rect)
         ax.text(p.cx, p.cy, str(gid), ha="center", va="center", fontsize=8)
 
-    # candidates (optional; caller may render their own)
-    if candidate_set is not None:
-        meta = candidate_set.meta or {}
-        gid = getattr(candidate_set, "gid", None)
+    # action_space (optional; caller may render their own)
+    if action_space is not None:
+        meta = action_space.meta or {}
+        gid = getattr(action_space, "gid", None)
         if gid is None:
             gid = meta.get("gid", None)
-        xyrot = candidate_set.xyrot[candidate_set.mask]
+        xyrot = action_space.xyrot[action_space.mask]
         if int(xyrot.shape[0]) > 0:
             xs: list[float] = []
             ys: list[float] = []
@@ -369,7 +370,7 @@ def _draw_layout_layers(
                 ys.append(float(cy))
             sc = ax.scatter(xs, ys, s=18, c="green", alpha=0.65, linewidths=0.0)
             sc.set_visible(True)
-            misc_artists["candidates"].append(sc)
+            misc_artists["action_space"].append(sc)
 
     # flow overlay
     flow_art = _plot_flow_overlay(ax, engine)
@@ -411,7 +412,7 @@ def _draw_layout_layers(
         "clearance_mask": misc_artists["clearance_mask"],
         "flow": misc_artists["flow"],
         "score": misc_artists["score"],
-        "candidates": misc_artists["candidates"],
+        "action_space": misc_artists["action_space"],
         "routes": misc_artists["routes"],
         "weight_zones": zone_artists["weight"],
         "dry_zones": zone_artists["dry"],
@@ -420,7 +421,7 @@ def _draw_layout_layers(
     }
 
 
-def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None, routes: Optional[list[Any]] = None) -> None:
+def plot_layout(env: Any, *, action_space: Optional[CandidateSet] = None, routes: Optional[list[Any]] = None) -> None:
     """Interactive viewer (dynamic toggles only).
 
     - No save_path/show_* args here on purpose: use `save_layout(...)` for saving.
@@ -428,7 +429,7 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None, route
     
     Args:
         env: FactoryLayoutEnv or wrapper
-        candidate_set: Optional candidate set to display
+        action_space: Optional candidate set to display
         routes: Optional list of RouteResult from postprocess.pathfinder
     """
     # Support both engine (`FactoryLayoutEnv`) and wrapper envs by unwrapping.
@@ -445,7 +446,7 @@ def plot_layout(env: Any, *, candidate_set: Optional[CandidateSet] = None, route
     ax.set_aspect("equal")
     ax.set_title("FactoryLayoutEnv")
 
-    groups = _draw_layout_layers(ax=ax, engine=engine, candidate_set=candidate_set, routes=routes)
+    groups = _draw_layout_layers(ax=ax, engine=engine, action_space=action_space, routes=routes)
     layer_vis = _default_layer_visibility()
     _apply_layer_visibility(groups, layer_vis)
     _install_click_legend(fig=fig, ax=ax, groups=groups, vis=layer_vis, legend_ax=ax_leg)
@@ -465,11 +466,11 @@ def browse_steps(
     selected_edge_width: float = 2.5,
     max_points: Optional[int] = None,
 ) -> None:
-    """Browse step-by-step candidate policies with a consistent scatter visualization.
+    """Browse step-by-step layouts with optional candidate-policy overlays.
 
-    - Candidates are plotted as scatter points colored by `scores`.
-    - Selected action is highlighted with a bold outline.
-    - Uses wrapper snapshot API: env.set_snapshot(frame.snapshot).
+    - If frame has action_space/scores/selected_action, draw policy scatter.
+    - If not, browse layout states only.
+    - Restores frame state via engine/wrapper set_state.
     """
     if not frames:
         raise ValueError("browse_steps: frames is empty")
@@ -477,8 +478,8 @@ def browse_steps(
     # Support wrapper envs by unwrapping engine.
     wrapper = env
     engine = getattr(env, "engine", env)
-    if not hasattr(wrapper, "set_snapshot"):
-        raise ValueError("browse_steps requires a wrapper env with set_snapshot(get_snapshot()) support.")
+    if not hasattr(wrapper, "set_state"):
+        raise ValueError("browse_steps requires a wrapper env with set_state(get_state_copy()) support.")
 
     # Fixed layout so axes don't shrink when navigating:
     # - main axis: layout + scatter
@@ -525,8 +526,10 @@ def browse_steps(
     layer_vis = _default_layer_visibility()
     legend_state: dict[str, Any] | None = None
 
-    def _frame_to_xy(frame: StepFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, tuple[float, float]]:
-        cand = frame.candidates
+    def _frame_to_xy(frame: StepFrame) -> Optional[tuple[np.ndarray, np.ndarray, np.ndarray, tuple[float, float]]]:
+        cand = frame.action_space
+        if cand is None or frame.scores is None or frame.selected_action is None:
+            return None
         gid = cand.gid
         if gid is None:
             raise ValueError("CandidateSet.gid is required for BL->center conversion.")
@@ -534,7 +537,7 @@ def browse_steps(
         xyrot = cand.xyrot.detach().cpu().numpy()
         scores = np.asarray(frame.scores, dtype=np.float32)
         if scores.shape[0] != xyrot.shape[0]:
-            raise ValueError(f"scores length {scores.shape[0]} != candidates {xyrot.shape[0]}")
+            raise ValueError(f"scores length {scores.shape[0]} != action_space {xyrot.shape[0]}")
 
         idxs = np.where(mask)[0]
         if max_points is not None and idxs.shape[0] > int(max_points):
@@ -568,8 +571,19 @@ def browse_steps(
         cur["idx"] = idx
         f = frames[idx]
 
-        # restore snapshot for this frame
-        wrapper.set_snapshot(f.snapshot)  # type: ignore[attr-defined]
+        # restore state for this frame
+        frame_state = f.state
+        if isinstance(frame_state, dict) and ("engine" in frame_state) and ("adapter" in frame_state):
+            eng_state = frame_state.get("engine", None)
+            adp_state = frame_state.get("adapter", None)
+            if hasattr(engine, "set_state") and isinstance(eng_state, EnvState):
+                engine.set_state(eng_state)  # type: ignore[attr-defined]
+            if adp_state is not None:
+                wrapper.set_state(adp_state)  # type: ignore[attr-defined]
+        elif isinstance(frame_state, EnvState) and hasattr(engine, "set_state"):
+            engine.set_state(frame_state)  # type: ignore[attr-defined]
+        else:
+            wrapper.set_state(frame_state)  # type: ignore[attr-defined]
 
         ax.clear()
         ax.set_xlim(0, engine.grid_width)
@@ -581,19 +595,21 @@ def browse_steps(
         ax_leg.axis("off")
 
         # Draw the same base UI layers as plot_layout (zones/masks/layout/flow/score),
-        # then overlay policy-colored candidates on top.
-        groups = _draw_layout_layers(ax=ax, engine=engine, candidate_set=None)
-        xs, ys, cs, (sx, sy) = _frame_to_xy(f)
-        sc = ax.scatter(xs, ys, s=float(point_size), c=cs, cmap=cmap, alpha=0.85, linewidths=0.0)
-        sc_sel = ax.scatter(
-            [sx],
-            [sy],
-            s=float(selected_point_size),
-            facecolors="none",
-            edgecolors="#1f77b4",  # blue
-            linewidths=float(selected_edge_width),
-        )
-        groups["candidates"].extend([sc, sc_sel])
+        # then overlay policy-colored action_space on top.
+        groups = _draw_layout_layers(ax=ax, engine=engine, action_space=None)
+        xy_data = _frame_to_xy(f)
+        if xy_data is not None:
+            xs, ys, cs, (sx, sy) = xy_data
+            sc = ax.scatter(xs, ys, s=float(point_size), c=cs, cmap=cmap, alpha=0.85, linewidths=0.0)
+            sc_sel = ax.scatter(
+                [sx],
+                [sy],
+                s=float(selected_point_size),
+                facecolors="none",
+                edgecolors="#1f77b4",  # blue
+                linewidths=float(selected_edge_width),
+            )
+            groups["action_space"].extend([sc, sc_sel])
         _apply_layer_visibility(groups, layer_vis)
         legend_state = _install_click_legend(
             fig=fig,
@@ -605,26 +621,32 @@ def browse_steps(
         )
 
         # colorbar (fixed axis; no layout shrink). Create once, then update.
-        if cbar is None:
-            cbar = fig.colorbar(sc, cax=cax)
-            cbar.set_label("policy score / prob")
+        if xy_data is not None and sc is not None:
+            cax.axis("on")
+            if cbar is None:
+                cbar = fig.colorbar(sc, cax=cax)
+                cbar.set_label("policy score / prob")
+            else:
+                cbar.update_normal(sc)
         else:
-            cbar.update_normal(sc)
+            if cbar is not None:
+                cbar.remove()
+                cbar = None
+            cax.clear()
+            cax.axis("off")
 
         # info panel outside the plot
-        sel_score = float(f.scores[int(f.selected_action)]) if 0 <= int(f.selected_action) < len(f.scores) else float("nan")
-        info_text.set_text(
-            " | ".join(
-                [
-                    f"step={f.step_idx}",
-                    f"cost={f.cost:.3f}",
-                    f"value={f.value:.6f}",
-                    f"selected_action={int(f.selected_action)}",
-                    f"selected_policy={sel_score:.6f}",
-                    f"valid={int(f.candidates.mask.to(torch.int64).sum().item())}",
-                ]
-            )
-        )
+        parts = [f"step={f.step_idx}", f"cost={f.cost:.3f}"]
+        if f.value is not None:
+            parts.append(f"value={float(f.value):.6f}")
+        if f.action_space is not None and f.scores is not None and f.selected_action is not None:
+            sel = int(f.selected_action)
+            scores = np.asarray(f.scores, dtype=np.float32)
+            sel_score = float(scores[sel]) if 0 <= sel < len(scores) else float("nan")
+            parts.append(f"selected_action={sel}")
+            parts.append(f"selected_policy={sel_score:.6f}")
+            parts.append(f"valid={int(f.action_space.mask.to(torch.int64).sum().item())}")
+        info_text.set_text(" | ".join(parts))
 
         fig.canvas.draw_idle()
 
@@ -652,7 +674,7 @@ def save_layout(
     show_flow: bool = False,
     show_score: bool = False,
     show_zones: bool = False,
-    candidate_set: Optional[CandidateSet] = None,
+    action_space: Optional[CandidateSet] = None,
     save_path: str,
 ) -> None:
     """Save a static layout image (no interactive toggles)."""
@@ -778,8 +800,8 @@ def save_layout(
                                           edgecolor="#d62728", facecolor="#d62728", alpha=0.15)
                     ax.add_patch(p)
 
-    for gid in engine.placed:
-        p = engine.placements[gid]
+    for gid in engine.get_state().placed:
+        p = engine.get_state().placements[gid]
         rect = patches.Rectangle(
             (float(p.x_bl), float(p.y_bl)),
             float(p.w),
@@ -792,12 +814,12 @@ def save_layout(
         ax.add_patch(rect)
         ax.text(p.cx, p.cy, str(gid), ha="center", va="center", fontsize=8)
 
-    if candidate_set is not None:
-        meta = candidate_set.meta or {}
-        gid = getattr(candidate_set, "gid", None)
+    if action_space is not None:
+        meta = action_space.meta or {}
+        gid = getattr(action_space, "gid", None)
         if gid is None:
             gid = meta.get("gid", None)
-        xyrot = candidate_set.xyrot[candidate_set.mask]
+        xyrot = action_space.xyrot[action_space.mask]
         if int(xyrot.shape[0]) > 0:
             xs: list[float] = []
             ys: list[float] = []
@@ -863,19 +885,19 @@ def plot_flow_graph(env, *, show_weights: bool = True) -> None:
 
 
 def _plot_flow_overlay(ax: plt.Axes, env) -> list[Any]:
-    if not env.placed:
+    if not env.get_state().placed:
         return []
     arts: list[Any] = []
-    # Use reward-computed argmin port pairs if available (env._flow_port_pairs).
-    port_pairs = getattr(env, "_flow_port_pairs", {})
+    # Use reward-computed argmin port pairs if available (env.get_state().flow.flow_port_pairs).
+    port_pairs = env.get_state().flow.flow_port_pairs
     for src, targets in env.group_flow.items():
-        if src not in env.placed:
+        if src not in env.get_state().placed:
             continue
-        src_p = env.placements[src]
+        src_p = env.get_state().placements[src]
         for dst, weight in targets.items():
-            if dst not in env.placed:
+            if dst not in env.get_state().placed:
                 continue
-            dst_p = env.placements[dst]
+            dst_p = env.get_state().placements[dst]
             cached = port_pairs.get((src, dst))
             if cached is not None:
                 (sx, sy), (dx, dy) = cached
@@ -999,8 +1021,8 @@ if __name__ == "__main__":
     # - Shows zone overlays and interactive toggles (show=True only).
     import torch
 
-    from envs.wrappers.alphachip import AlphaChipWrapperEnv
-    from envs.wrappers.greedy import GreedyWrapperEnv
+    from decision_adapters.alphachip import AlphaChipDecisionAdapter
+    from decision_adapters.greedy import GreedyDecisionAdapter
     from envs.env import FacilityGroup, FactoryLayoutEnv
 
     dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -1056,13 +1078,13 @@ if __name__ == "__main__":
 
     # ---- 1) Coarse wrapper demo ----
     # For coarse, we just visualize the current layout (candidate visualization via decode is omitted in demo).
-    env1 = AlphaChipWrapperEnv(engine=engine, coarse_grid=32, rot=0)
+    env1 = AlphaChipDecisionAdapter(engine=engine, coarse_grid=32, rot=0)
     _obs1, _ = env1.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
-    plot_layout(env1, candidate_set=None)
+    plot_layout(env1, action_space=None)
     plot_flow_graph(env1)
 
     # ---- 2) Greedy(TopK) wrapper demo ----
-    env2 = GreedyWrapperEnv(
+    env2 = GreedyDecisionAdapter(
         engine=engine,
         k=70,
         scan_step=5.0,
@@ -1074,11 +1096,10 @@ if __name__ == "__main__":
         random_seed=7,
     )
     _obs2, _ = env2.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
-    # Greedy(TopK) wrapper already builds candidates; use obs-provided (decoded) candidates for plotting.
+    # Greedy(TopK) wrapper already builds action_space; use obs-provided (decoded) action_space for plotting.
     topk_obs, _ = env2.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
     cand = None
     if isinstance(topk_obs, dict) and ("action_mask" in topk_obs) and ("action_xyrot" in topk_obs):
-        cand = CandidateSet(xyrot=topk_obs["action_xyrot"], mask=topk_obs["action_mask"], gid=engine.remaining[0] if engine.remaining else None)
-    plot_layout(env2, candidate_set=cand)
+        cand = CandidateSet(xyrot=topk_obs["action_xyrot"], mask=topk_obs["action_mask"], gid=engine.get_state().remaining[0] if engine.get_state().remaining else None)
+    plot_layout(env2, action_space=cand)
     plot_flow_graph(env2)
-

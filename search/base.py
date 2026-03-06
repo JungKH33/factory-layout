@@ -3,14 +3,15 @@ from __future__ import annotations
 import heapq
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from envs.wrappers.base import BaseWrapper
+from decision_adapters.base import BaseDecisionAdapter
+from envs.state import EnvState
 
 from agents.base import Agent
-from envs.wrappers.candidate_set import CandidateSet
+from envs.action_space import ActionSpace as CandidateSet
 
 
 @dataclass
@@ -29,19 +30,6 @@ class SearchProgress:
 ProgressCallback = Callable[[SearchProgress], None]
 
 
-class SearchStrategy(Protocol):
-    """Choose an action index among candidates for the current state."""
-
-    def select(
-        self,
-        *,
-        env: BaseWrapper,
-        obs: dict,
-        agent: Agent,
-        root_candidates: CandidateSet,
-    ) -> int: ...
-
-
 class BaseSearch(ABC):
     """Base class for search algorithms with progress callback support."""
     
@@ -49,6 +37,10 @@ class BaseSearch(ABC):
         self.top_tracker: Optional[TopKTracker] = None
         self._progress_callback: Optional[ProgressCallback] = None
         self._progress_interval: int = 10
+        self.adapter: Optional[BaseDecisionAdapter] = None
+
+    def set_adapter(self, adapter: BaseDecisionAdapter) -> None:
+        self.adapter = adapter
     
     def set_progress_callback(
         self,
@@ -73,12 +65,11 @@ class BaseSearch(ABC):
     def select(
         self,
         *,
-        env: BaseWrapper,
         obs: dict,
         agent: Agent,
-        root_candidates: CandidateSet,
+        root_action_space: CandidateSet,
     ) -> int:
-        """Select an action from candidates."""
+        """Select an action from action_space."""
         ...
 
 
@@ -88,7 +79,7 @@ class SearchResult:
     cost: float                                   # cost() 값 (낮을수록 좋음)
     cum_reward: float                             # 누적 reward
     positions: Dict[str, Tuple[int, int, int]]    # {gid: (x, y, rot)}
-    snapshot: Dict[str, Any]                      # env 복원용
+    engine_state: EnvState                        # env 복원용
 
 
 class TopKTracker:
@@ -140,4 +131,3 @@ class TopKTracker:
     def clear(self) -> None:
         self._heap.clear()
         self._counter = 0
-

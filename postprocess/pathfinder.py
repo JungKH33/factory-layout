@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
+from envs.action import EnvAction
+
 
 @dataclass
 class RouteResult:
@@ -158,8 +160,8 @@ class RoutePlanner:
         self.algorithm = algorithm
         
         # 충돌맵 캐싱
-        self._occ_blocked = env._occ_invalid
-        self._static_blocked = env._static_invalid
+        self._occ_blocked = env.get_maps().occ_invalid
+        self._static_blocked = env.get_maps().static_invalid
     
     def _get_io_coords(self, gid: str) -> Tuple[Tuple[int, int], Tuple[int, int]]:
         """설비의 entry/exit 좌표 계산.
@@ -167,13 +169,28 @@ class RoutePlanner:
         Returns:
             (entry, exit) 튜플, 각각 (x, y)
         """
-        if gid not in self.env.placed:
+        if gid not in self.env.get_state().placed:
             raise ValueError(f"Group {gid} is not placed")
-        
-        ent_x, ent_y, exi_x, exi_y = self.env.compute_enex(gid)
-        entry = (int(round(ent_x)), int(round(ent_y)))
-        exit_ = (int(round(exi_x)), int(round(exi_y)))
-        
+
+        p = self.env.get_state().placements.get(gid, None)
+        if p is None:
+            raise ValueError(f"placement missing for gid={gid!r}")
+
+        entries = list(getattr(p, "entries", []))
+        exits = list(getattr(p, "exits", []))
+        if entries:
+            entry = (int(round(float(entries[0][0]))), int(round(float(entries[0][1]))))
+        else:
+            cx = 0.5 * (float(getattr(p, "min_x")) + float(getattr(p, "max_x")))
+            cy = 0.5 * (float(getattr(p, "min_y")) + float(getattr(p, "max_y")))
+            entry = (int(round(cx)), int(round(cy)))
+        if exits:
+            exit_ = (int(round(float(exits[0][0]))), int(round(float(exits[0][1]))))
+        else:
+            cx = 0.5 * (float(getattr(p, "min_x")) + float(getattr(p, "max_x")))
+            cy = 0.5 * (float(getattr(p, "min_y")) + float(getattr(p, "max_y")))
+            exit_ = (int(round(cx)), int(round(cy)))
+
         return entry, exit_
     
     def plan(self, src_gid: str, dst_gid: str) -> RouteResult:
@@ -256,12 +273,12 @@ if __name__ == "__main__":
     import sys
     sys.path.insert(0, str(__file__).rsplit("postprocess", 1)[0])
     
-    from envs.json_loader import load_env
-    from envs.visualizer import plot_layout
+    from envs.env_loader import load_env
+    from envs.env_visualizer import plot_layout
     from postprocess.output import print_summary
     
     # 1. env 로드
-    config_path = "env_configs/clearance_03.json"
+    config_path = "envs/env_configs/clearance_03.json"
     print(f"[1] Loading: {config_path}")
     env = load_env(config_path).env
     
@@ -269,8 +286,8 @@ if __name__ == "__main__":
     print("\n[2] Placing facilities...")
     env.reset()
     step = 0
-    while env.remaining:
-        gid = env.remaining[0]
+    while env.get_state().remaining:
+        gid = env.get_state().remaining[0]
         cx = env.grid_width // 2 + step * 50
         cy = env.grid_height // 2 + step * 30
         
@@ -278,8 +295,19 @@ if __name__ == "__main__":
         for dx in range(-200, 201, 10):
             for dy in range(-200, 201, 10):
                 x, y = cx + dx, cy + dy
-                if env.is_placeable(gid, x, y, 0):
-                    env._apply_place(gid, x, y, 0, update_caches=True)
+                spec = env.group_specs[gid]
+                if not spec.is_placeable(
+                    x_bl=int(x),
+                    y_bl=int(y),
+                    rot=0,
+                    invalid=env.get_maps().invalid,
+                    clear_invalid=env.get_maps().clear_invalid,
+                ):
+                    continue
+                _obs, _reward, _terminated, _truncated, info = env.step_action(
+                    EnvAction(gid=gid, x=int(x), y=int(y), rot=0)
+                )
+                if info.get("reason") == "placed":
                     print(f"    {gid} at ({x}, {y})")
                     placed = True
                     break

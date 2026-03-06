@@ -10,10 +10,10 @@ import torch
 
 from envs.env import FactoryLayoutEnv, GroupId
 
-from .base import BaseWrapper
+from .base import BaseDecisionAdapter
 
 
-class GreedyWrapperEnv(BaseWrapper):
+class GreedyDecisionAdapter(BaseDecisionAdapter):
     """Top-K candidate wrapper: Discrete(K) actions over an in-file TopK generator.
 
     Notes:
@@ -27,7 +27,6 @@ class GreedyWrapperEnv(BaseWrapper):
     def __init__(
         self,
         *,
-        engine: FactoryLayoutEnv,
         k: int,
         # Defaults MUST match `actionspace/topk.py:TopKSelector` for parity.
         scan_step: float = 2000.0,
@@ -40,7 +39,7 @@ class GreedyWrapperEnv(BaseWrapper):
         min_diversity: int = 0,  # parity (unused)
         random_seed: Optional[int] = None,
     ):
-        super().__init__(engine=engine)
+        super().__init__()
         self.k = int(k)
         self.scan_step = float(scan_step)
         self.quant_step = float(quant_step) if quant_step is not None else None
@@ -56,13 +55,17 @@ class GreedyWrapperEnv(BaseWrapper):
         self.observation_space = gym.spaces.Dict({})
 
         self.action_xyrot: Optional[torch.Tensor] = None  # long [K,3]
+        self.action_delta: Optional[torch.Tensor] = None  # float [K]
 
     def create_mask(self) -> torch.Tensor:
-        if not self.engine.remaining:
+        # Keep candidate sampling deterministic from engine state.
+        self._rng = random.Random(self.action_space_seed())
+        gid = self.current_gid()
+        if gid is None:
             self.action_xyrot = torch.zeros((self.k, 3), dtype=torch.long, device=self.device)
+            self.action_delta = torch.full((self.k,), float("inf"), dtype=torch.float32, device=self.device)
             return torch.zeros((self.k,), dtype=torch.bool, device=self.device)
 
-        gid = self.engine.remaining[0]
         candidates, mask = self._generate(self.engine, gid)
 
         xyrot = torch.zeros((self.k, 3), dtype=torch.long, device=self.device)
@@ -72,63 +75,50 @@ class GreedyWrapperEnv(BaseWrapper):
             xyrot[i, 1] = int(y_bl)
             xyrot[i, 2] = int(rot)
         self.action_xyrot = xyrot
+        delta = torch.full((self.k,), float("inf"), dtype=torch.float32, device=self.device)
+        vmask = mask.to(dtype=torch.bool, device=self.device).view(-1)
+        vidx = torch.where(vmask)[0]
+        if int(vidx.numel()) > 0:
+            vv = xyrot[vidx]
+            d = self.engine.delta_cost(gid=gid, x=vv[:, 0], y=vv[:, 1], rot=vv[:, 2]).to(
+                dtype=torch.float32, device=self.device
+            )
+            delta[vidx] = d.view(-1)
+        self.action_delta = delta
         return mask
 
-    def _build_obs(self) -> Dict[str, Any]:
-        assert self.mask is not None
-        assert self.action_xyrot is not None
-        obs = dict(self.engine._build_obs())
-        obs["action_mask"] = self.mask
-        obs["action_xyrot"] = self.action_xyrot
-        return obs
-
-    def decode_action(self, action: int) -> Tuple[float, float, int, int, int]:
-        a = int(action)
-        if self.action_xyrot is None or a < 0 or a >= self.k:
-            return 0.0, 0.0, 0, 0, 0
-        xyz = self.action_xyrot[a]
-        return float(xyz[0].item()), float(xyz[1].item()), int(xyz[2].item()), 0, a
-
-    def step(self, action: int):
-        assert self.mask is not None
-        x, y, rot, _i, cand_idx = self.decode_action(int(action))
-        obs_core, reward, terminated, truncated, info = self.engine.step_masked(
-            action=int(action),
-            x=float(x),
-            y=float(y),
-            rot=int(rot),
-            mask=self.mask,
-            action_space_n=int(self.k),
-            extra_info={"cand_idx": int(cand_idx)},
-        )
-        if not (terminated or truncated):
-            self.mask = self.create_mask()
-            return self._build_obs(), reward, terminated, truncated, info
-        return obs_core, reward, terminated, truncated, info
-
-    # ---- snapshot api (for wrapped search/MCTS) ----
-    def get_snapshot(self) -> Dict[str, object]:
-        snap = dict(super().get_snapshot())
+    # ---- state api (for wrapped search/MCTS) ----
+    def get_state_copy(self) -> Dict[str, object]:
+        snap = dict(super().get_state_copy())
         snap["rng_state"] = self._rng.getstate()
         if isinstance(self.action_xyrot, torch.Tensor):
             snap["action_xyrot"] = self.action_xyrot.clone()
         else:
             snap["action_xyrot"] = None
+        if isinstance(self.action_delta, torch.Tensor):
+            snap["action_delta"] = self.action_delta.clone()
+        else:
+            snap["action_delta"] = None
         return snap
 
-    def set_snapshot(self, snapshot: Dict[str, object]) -> None:
-        super().set_snapshot(snapshot)
-        rs = snapshot.get("rng_state", None)
+    def set_state(self, state: Dict[str, object]) -> None:
+        super().set_state(state)
+        rs = state.get("rng_state", None)
         if rs is not None:
             try:
                 self._rng.setstate(rs)
             except Exception:
                 pass
-        ax = snapshot.get("action_xyrot", None)
+        ax = state.get("action_xyrot", None)
         if isinstance(ax, torch.Tensor):
             self.action_xyrot = ax.to(device=self.device, dtype=torch.long).clone()
         else:
             self.action_xyrot = None
+        ad = state.get("action_delta", None)
+        if isinstance(ad, torch.Tensor):
+            self.action_delta = ad.to(device=self.device, dtype=torch.float32).clone()
+        else:
+            self.action_delta = None
 
     # ---- candidate generation (copied from actionspace/topk.py; BL int coords) ----
     def _quota(self, k: int) -> Tuple[int, int, int, int]:
@@ -141,8 +131,8 @@ class GreedyWrapperEnv(BaseWrapper):
         return int(n_high), int(n_near), int(n_coarse), int(n_rand)
 
     def _wh_int(self, env: FactoryLayoutEnv, gid: GroupId, rot: int) -> Tuple[int, int]:
-        g = env.groups[gid]
-        w, h = env.rotated_size(g, int(rot))
+        g = env.group_specs[gid]
+        w, h = g._rotated_size(int(rot))
         return int(round(float(w))), int(round(float(h)))
 
     def _clamp_bl(self, env: FactoryLayoutEnv, x_bl: int, y_bl: int, w: int, h: int) -> Tuple[int, int]:
@@ -203,8 +193,8 @@ class GreedyWrapperEnv(BaseWrapper):
         if w <= 0 or h <= 0:
             return True
 
-        invalid = env._invalid  # torch.BoolTensor[H,W]
-        clear_invalid = env._clear_invalid  # torch.BoolTensor[H,W]
+        invalid = env.get_maps().invalid  # torch.BoolTensor[H,W]
+        clear_invalid = env.get_maps().clear_invalid  # torch.BoolTensor[H,W]
 
         x0 = int(x_bl)
         y0 = int(y_bl)
@@ -245,7 +235,7 @@ class GreedyWrapperEnv(BaseWrapper):
     def _source_stratified(self, env: FactoryLayoutEnv, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
         if count <= 0:
             return []
-        group = env.groups[gid]
+        group = env.group_specs[gid]
         rotations = (0, 90) if group.rotatable else (0,)
 
         count_per_rot = max(1, count // len(rotations))
@@ -270,7 +260,7 @@ class GreedyWrapperEnv(BaseWrapper):
         return candidates
 
     def _source_high(self, env: FactoryLayoutEnv, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
-        group = env.groups[gid]
+        group = env.group_specs[gid]
         rotations = (0, 90) if group.rotatable else (0,)
         step = max(int(round(self.scan_step)), 1)
         max_scan = 50000
@@ -279,8 +269,12 @@ class GreedyWrapperEnv(BaseWrapper):
             y0 = int(y_bl)
             y1 = int(y_bl) + int(h)
             best: Optional[int] = None
-            for pid in env.placed:
-                px0, py0, px1, py1 = env.placed_body_rect_bl(pid)
+            for pid in env.get_state().placed:
+                p = env.get_state().placements[pid]
+                px0 = int(getattr(p, "min_x"))
+                py0 = int(getattr(p, "min_y"))
+                px1 = int(getattr(p, "max_x"))
+                py1 = int(getattr(p, "max_y"))
                 if py1 <= y0 or py0 >= y1:
                     continue
                 if direction > 0 and px0 >= x_bl:
@@ -321,17 +315,21 @@ class GreedyWrapperEnv(BaseWrapper):
         return results
 
     def _source_near(self, env: FactoryLayoutEnv, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
-        if not env.placed:
+        if not env.get_state().placed:
             return []
-        group = env.groups[gid]
+        group = env.group_specs[gid]
         rotations = (0, 90) if group.rotatable else (0,)
         candidates: List[Tuple[GroupId, int, int, int]] = []
         for rot in rotations:
             w, h = self._wh_int(env, gid, int(rot))
             if int(env.grid_width) - w < 0 or int(env.grid_height) - h < 0:
                 continue
-            for pid in env.placed:
-                px0, py0, px1, py1 = env.placed_body_rect_bl(pid)
+            for pid in env.get_state().placed:
+                p = env.get_state().placements[pid]
+                px0 = int(getattr(p, "min_x"))
+                py0 = int(getattr(p, "min_y"))
+                px1 = int(getattr(p, "max_x"))
+                py1 = int(getattr(p, "max_y"))
                 x_events = [int(px0) - w, int(px0), int(px1) - w, int(px1)]
                 y_events = [int(py0) - h, int(py0), int(py1) - h, int(py1)]
                 for x_bl in x_events:
@@ -354,7 +352,7 @@ class GreedyWrapperEnv(BaseWrapper):
     def _source_random(self, env: FactoryLayoutEnv, gid: GroupId, count: int) -> List[Tuple[GroupId, int, int, int]]:
         if count <= 0:
             return []
-        group = env.groups[gid]
+        group = env.group_specs[gid]
         candidates: List[Tuple[GroupId, int, int, int]] = []
         for _ in range(count):
             rot = 0 if not group.rotatable else self._rng.choice([0, 90])
@@ -379,7 +377,7 @@ class GreedyWrapperEnv(BaseWrapper):
         raw_tagged.extend((0, c) for c in self._source_stratified(env, gid, n_strat_target))
         raw_tagged.extend((1, c) for c in self._source_random(env, gid, n_rand))
 
-        group = env.groups[gid]
+        group = env.group_specs[gid]
         rotations = (0, 90) if getattr(group, "rotatable", False) else (0,)
         wh_cache = {int(r): self._wh_int(env, gid, int(r)) for r in rotations}
         unique_tagged = self._dedup_tagged(raw_tagged, quant_step, group)
@@ -387,7 +385,13 @@ class GreedyWrapperEnv(BaseWrapper):
             c
             for _, c in unique_tagged
             if (not self._cheap_reject_body(env, gid=gid, x_bl=int(c[1]), y_bl=int(c[2]), rot=int(c[3]), wh_cache=wh_cache))
-            and env.is_placeable(gid, float(c[1]), float(c[2]), int(c[3]))
+            and group.is_placeable(
+                x_bl=int(c[1]),
+                y_bl=int(c[2]),
+                rot=int(c[3]),
+                invalid=env.get_maps().invalid,
+                clear_invalid=env.get_maps().clear_invalid,
+            )
         ]
 
         final = valid_candidates[: self.k]
@@ -404,11 +408,11 @@ class GreedyWrapperEnv(BaseWrapper):
         device = env.device
         q = self.quant_step if self.quant_step is not None else self.scan_step
 
-        if len(env.placed) == 0:
+        if len(env.get_state().placed) == 0:
             return self._generate_initial(env, next_group_id, q)
 
         n_high, n_near, n_coarse, n_rand = self._quota(self.k)
-        group = env.groups[next_group_id]
+        group = env.group_specs[next_group_id]
         rotations = (0, 90) if getattr(group, "rotatable", False) else (0,)
         wh_cache = {int(r): self._wh_int(env, next_group_id, int(r)) for r in rotations}
 
@@ -423,7 +427,13 @@ class GreedyWrapperEnv(BaseWrapper):
             (src, c)
             for src, c in unique_tagged
             if (not self._cheap_reject_body(env, gid=next_group_id, x_bl=int(c[1]), y_bl=int(c[2]), rot=int(c[3]), wh_cache=wh_cache))
-            and env.is_placeable(next_group_id, float(c[1]), float(c[2]), int(c[3]))
+            and group.is_placeable(
+                x_bl=int(c[1]),
+                y_bl=int(c[2]),
+                rot=int(c[3]),
+                invalid=env.get_maps().invalid,
+                clear_invalid=env.get_maps().clear_invalid,
+            )
         ]
 
         pools: Dict[int, List[Tuple[GroupId, int, int, int]]] = {0: [], 1: [], 2: [], 3: []}
@@ -448,44 +458,46 @@ class GreedyWrapperEnv(BaseWrapper):
 if __name__ == "__main__":
     import torch
 
-    from envs.wrappers.candidate_set import CandidateSet
-    from envs.json_loader import load_env
-    from envs.visualizer import plot_layout
+    from envs.action_space import ActionSpace as CandidateSet
+    from envs.action import EnvAction
+    from envs.env_loader import load_env
+    from envs.env_visualizer import plot_layout
 
-    ENV_JSON = "env_configs/basic_01.json"
+    ENV_JSON = "envs/env_configs/basic_01.json"
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
 
-    env = GreedyWrapperEnv(engine=engine, k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    adapter = GreedyDecisionAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
 
     t0 = time.perf_counter()
-    obs, _info = env.reset(options=loaded.reset_kwargs)
+    _obs_env, _info = engine.reset(options=loaded.reset_kwargs)
+    adapter.bind(engine)
+    obs = adapter.build_observation()
+    candidates = adapter.build_action_space()
     dt_reset_ms = (time.perf_counter() - t0) * 1000.0
 
-    valid = int(obs["action_mask"].sum().item())
-    a = int(torch.where(obs["action_mask"])[0][0].item()) if valid > 0 else 0
+    valid = int(candidates.mask.sum().item())
+    a = int(torch.where(candidates.mask)[0][0].item()) if valid > 0 else 0
 
     # Plot: initial candidates (interactive; close to continue)
-    next_gid = env.engine.remaining[0] if env.engine.remaining else None
-    cand0 = CandidateSet(xyrot=obs["action_xyrot"], mask=obs["action_mask"], gid=next_gid, meta={"k": int(env.k)})
-    plot_layout(env, candidate_set=cand0)
+    plot_layout(engine, action_space=candidates)
 
     t1 = time.perf_counter()
-    obs2, _r, _term, _trunc, _info2 = env.step(a)
+    placement = adapter.decode_action(a, candidates)
+    _obs_env2, _r, _term, _trunc, _info2 = engine.step_action(placement)
+    obs2 = adapter.build_observation()
+    candidates2 = adapter.build_action_space()
     dt_step_ms = (time.perf_counter() - t1) * 1000.0
 
     # Plot: after 1 placement + new candidates (if any)
-    if isinstance(obs2, dict) and ("action_mask" in obs2) and ("action_xyrot" in obs2):
-        next_gid2 = env.engine.remaining[0] if env.engine.remaining else None
-        cand1 = CandidateSet(xyrot=obs2["action_xyrot"], mask=obs2["action_mask"], gid=next_gid2, meta={"k": int(env.k)})
-        plot_layout(env, candidate_set=cand1)
+    if int(candidates2.mask.shape[0]) > 0:
+        plot_layout(engine, action_space=candidates2)
     else:
-        plot_layout(env, candidate_set=None)
+        plot_layout(engine, action_space=None)
 
-    print("[GreedyWrapperEnv demo]")
+    print("[GreedyDecisionAdapter demo]")
     print(" env=", ENV_JSON, "device=", device, "k=", 50)
     print(" valid_actions=", valid, "first_valid_action=", a)
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")
-

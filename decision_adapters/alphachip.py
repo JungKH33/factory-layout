@@ -9,10 +9,10 @@ import torch.nn.functional as F
 
 from envs.env import FactoryLayoutEnv, GroupId
 
-from .base import BaseWrapper
+from .base import BaseDecisionAdapter
 
 
-class AlphaChipWrapperEnv(BaseWrapper):
+class AlphaChipDecisionAdapter(BaseDecisionAdapter):
     """AlphaChip-style coarse action wrapper: Discrete(G*G) actions.
 
     Provides:
@@ -25,21 +25,37 @@ class AlphaChipWrapperEnv(BaseWrapper):
     def __init__(
         self,
         *,
-        engine: FactoryLayoutEnv,
         coarse_grid: int,
         rot: int = 0,
     ):
-        super().__init__(engine=engine)
-        self.grid_width = int(engine.grid_width)
-        self.grid_height = int(engine.grid_height)
+        super().__init__()
+        self.grid_width = 1
+        self.grid_height = 1
         self.coarse_grid = int(coarse_grid)
         self.rot = int(rot)
 
-        # AlphaChip graph tensors are AlphaChip-specific; build them here (not in engine).
-        self.edge_index, self.edge_attr = self._build_graph_static()
+        # AlphaChip graph tensors are adapter-specific caches, rebuilt when bound engine changes.
+        self._graph_engine_key: Optional[Tuple[int, int, int]] = None
+        self.edge_index = torch.zeros((2, 0), dtype=torch.long)
+        self.edge_attr = torch.zeros((0, 1), dtype=torch.float32)
 
         self.action_space = gym.spaces.Discrete(self.coarse_grid * self.coarse_grid)
         self.observation_space = gym.spaces.Dict({})
+        self.action_xyrot: Optional[torch.Tensor] = None  # long [G*G,3]
+
+    def bind(self, engine: FactoryLayoutEnv) -> None:
+        super().bind(engine)
+        self.grid_width = int(engine.grid_width)
+        self.grid_height = int(engine.grid_height)
+        self._ensure_graph_static()
+
+    def _ensure_graph_static(self) -> None:
+        eng = self.engine
+        key = (id(eng), int(len(eng.node_ids)), int(sum(len(v) for v in eng.group_flow.values())))
+        if self._graph_engine_key == key:
+            return
+        self.edge_index, self.edge_attr = self._build_graph_static()
+        self._graph_engine_key = key
 
     def _build_graph_static(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Build sparse graph tensors from engine.group_flow.
@@ -73,41 +89,17 @@ class AlphaChipWrapperEnv(BaseWrapper):
         return cell_w, cell_h
 
     def _next_gid(self) -> Optional[GroupId]:
-        return self.engine.remaining[0] if self.engine.remaining else None
-
-    def decode_action(self, mask_index: int) -> Tuple[float, float, int, int, int]:
-        """Decode coarse cell index to bottom-left integer coordinates (x_bl,y_bl,rot)."""
-        gid = self._next_gid()
-        if gid is None:
-            return 0.0, 0.0, 0, 0, 0
-
-        g = int(self.coarse_grid)
-        a = int(mask_index)
-        i = a // g
-        j = a % g
-
-        group = self.engine.groups[gid]
-        rot = int(self.rot if group.rotatable else 0)
-        w, h = self.engine.rotated_size(group, rot)
-        w_i = max(1, int(round(float(w))))
-        h_i = max(1, int(round(float(h))))
-
-        cell_w, cell_h = self.cell_wh()
-        cx = float(j * cell_w) + (cell_w / 2.0)
-        cy = float(i * cell_h) + (cell_h / 2.0)
-        x_bl = int(round(cx - (w_i / 2.0)))
-        y_bl = int(round(cy - (h_i / 2.0)))
-        return float(x_bl), float(y_bl), int(rot), int(i), int(j)
+        return self.current_gid()
 
     def _valid_top_left_body(self, *, gid: GroupId, rot: int) -> torch.Tensor:
         """Return bool[H2,W2] where True means body window is clear of invalid and clear_invalid."""
-        group = self.engine.groups[gid]
-        w, h = self.engine.rotated_size(group, rot)
+        group = self.engine.group_specs[gid]
+        w, h = group._rotated_size(int(rot))
         kw = max(1, int(round(float(w))))
         kh = max(1, int(round(float(h))))
 
-        inv = self.engine._invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
-        clr = self.engine._clear_invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
+        inv = self.engine.get_maps().invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
+        clr = self.engine.get_maps().clear_invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
         kernel = torch.ones((1, 1, kh, kw), device=self.device, dtype=inv.dtype)
 
         ov_inv = F.conv2d(inv, kernel, padding=0).squeeze(0).squeeze(0)
@@ -119,17 +111,17 @@ class AlphaChipWrapperEnv(BaseWrapper):
 
         Indexing rule: pad top-left is (x_bl - cL, y_bl - cB).
         """
-        group = self.engine.groups[gid]
-        w, h = self.engine.rotated_size(group, rot)
+        group = self.engine.group_specs[gid]
+        w, h = group._rotated_size(int(rot))
         w_i = max(1, int(round(float(w))))
         h_i = max(1, int(round(float(h))))
 
-        cL, cR, cB, cT = self.engine._clearance_lrtb(group, rot)
+        cL, cR, cB, cT = group._clearance_lrtb(int(rot))
         cL_i, cR_i, cB_i, cT_i = int(cL), int(cR), int(cB), int(cT)
         kw = max(1, w_i + cL_i + cR_i)
         kh = max(1, h_i + cB_i + cT_i)
 
-        inv = self.engine._invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
+        inv = self.engine.get_maps().invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
         kernel = torch.ones((1, 1, kh, kw), device=self.device, dtype=inv.dtype)
         ov = F.conv2d(inv, kernel, padding=0).squeeze(0).squeeze(0)
         return (ov == 0), int(cL_i), int(cB_i)
@@ -137,9 +129,12 @@ class AlphaChipWrapperEnv(BaseWrapper):
     def create_mask(self) -> torch.Tensor:
         gid = self._next_gid()
         if gid is None:
+            self.action_xyrot = torch.zeros(
+                (self.coarse_grid * self.coarse_grid, 3), dtype=torch.long, device=self.device
+            )
             return torch.zeros((self.coarse_grid * self.coarse_grid,), dtype=torch.bool, device=self.device)
 
-        group = self.engine.groups[gid]
+        group = self.engine.group_specs[gid]
         rot = int(self.rot if group.rotatable else 0)
         body_ok = self._valid_top_left_body(gid=gid, rot=rot)  # bool[H2,W2]
         pad_ok, cL, cB = self._valid_top_left_pad(gid=gid, rot=rot)  # bool[H3,W3]
@@ -155,11 +150,13 @@ class AlphaChipWrapperEnv(BaseWrapper):
         cx = (jj * cell_w).to(torch.float32) + (cell_w / 2.0)
         cy = (ii * cell_h).to(torch.float32) + (cell_h / 2.0)
 
-        w, h = self.engine.rotated_size(group, rot)
+        w, h = group._rotated_size(int(rot))
         w_i = max(1, int(round(float(w))))
         h_i = max(1, int(round(float(h))))
         x_bl = torch.round(cx - (w_i / 2.0)).to(torch.long)
         y_bl = torch.round(cy - (h_i / 2.0)).to(torch.long)
+        rot_map = torch.full((g, g), int(rot), dtype=torch.long, device=self.device)
+        self.action_xyrot = torch.stack([x_bl, y_bl, rot_map], dim=-1).view(g * g, 3).to(dtype=torch.long)
 
         # body index
         inside_body = (x_bl >= 0) & (y_bl >= 0) & (x_bl < W2) & (y_bl < H2)
@@ -180,9 +177,8 @@ class AlphaChipWrapperEnv(BaseWrapper):
         ok[inside_pad] = ok[inside_pad] & flat_pad[idx_pad[inside_pad]]
         return ok.reshape(-1)
 
-    def _build_obs(self) -> Dict[str, Any]:
-        assert self.mask is not None
-        obs = dict(self.engine._build_obs())
+    def build_observation(self) -> Dict[str, Any]:
+        obs = dict(self.engine.build_observation())
         # Attach AlphaChip graph tensors (AlphaChip-specific; do not come from engine caches).
         gid = self._next_gid()
         cur_idx = int(self.engine.gid_to_idx.get(gid, 0)) if gid is not None else 0
@@ -191,8 +187,23 @@ class AlphaChipWrapperEnv(BaseWrapper):
         obs["edge_attr"] = self.edge_attr
         obs["current_node"] = torch.tensor([cur_idx], dtype=torch.long, device=self.device)
         obs["netlist_metadata"] = self._build_netlist_metadata()
-        obs["action_mask"] = self.mask
         return obs
+
+    def get_state_copy(self) -> Dict[str, object]:
+        snap = dict(super().get_state_copy())
+        if isinstance(self.action_xyrot, torch.Tensor):
+            snap["action_xyrot"] = self.action_xyrot.clone()
+        else:
+            snap["action_xyrot"] = None
+        return snap
+
+    def set_state(self, state: Dict[str, object]) -> None:
+        super().set_state(state)
+        ax = state.get("action_xyrot", None)
+        if isinstance(ax, torch.Tensor):
+            self.action_xyrot = ax.to(device=self.device, dtype=torch.long).clone()
+        else:
+            self.action_xyrot = None
 
     def _build_x(self) -> torch.Tensor:
         """Build node features x: float32 [N,8] from engine state."""
@@ -200,16 +211,17 @@ class AlphaChipWrapperEnv(BaseWrapper):
         x = torch.zeros((N, 8), dtype=torch.float32, device=self.device)
         # static features (w/h)
         for gid, i in self.engine.gid_to_idx.items():
-            gg = self.engine.groups[gid]
+            gg = self.engine.group_specs[gid]
             x[int(i), 0] = float(gg.width) / float(self.engine.grid_width)
             x[int(i), 1] = float(gg.height) / float(self.engine.grid_height)
         # dynamic features (placed + center + rot)
-        for gid in self.engine.placed:
+        for gid in self.engine.get_state().placed:
             idx = self.engine.gid_to_idx.get(gid, None)
             if idx is None:
                 continue
-            x_bl, y_bl, rot = self.engine.positions[gid]
-            cx, cy = self.engine.center_from_bl(gid=gid, x_bl=int(x_bl), y_bl=int(y_bl), rot=int(rot))
+            p = self.engine.get_state().placements[gid]
+            x_bl, y_bl, rot = p.pose()
+            cx, cy = self.engine.group_specs[gid]._center_from_bl(int(x_bl), int(y_bl), int(rot))
             x[int(idx), 2] = 1.0
             x[int(idx), 3] = float(cx) / float(self.engine.grid_width)
             x[int(idx), 4] = float(cy) / float(self.engine.grid_height)
@@ -219,8 +231,8 @@ class AlphaChipWrapperEnv(BaseWrapper):
     def _build_netlist_metadata(self) -> torch.Tensor:
         """Build AlphaChip netlist_metadata: float32 [12]. Includes cost via env.cost()."""
         meta = torch.zeros((12,), dtype=torch.float32, device=self.device)
-        placed_ratio = float(len(self.engine.placed)) / float(max(1, len(self.engine.node_ids)))
-        remaining_ratio = float(len(self.engine.remaining)) / float(max(1, len(self.engine.node_ids)))
+        placed_ratio = float(len(self.engine.get_state().placed)) / float(max(1, len(self.engine.node_ids)))
+        remaining_ratio = float(len(self.engine.get_state().remaining)) / float(max(1, len(self.engine.node_ids)))
         cost = float(self.engine.cost())
         meta[0] = float(placed_ratio)
         meta[1] = float(remaining_ratio)
@@ -232,28 +244,6 @@ class AlphaChipWrapperEnv(BaseWrapper):
         meta[4] = 0.0
         return meta
 
-    def step(self, action: int):
-        assert self.mask is not None
-        x_bl, y_bl, rot, i, j = self.decode_action(int(action))
-        obs_core, reward, terminated, truncated, info = self.engine.step_masked(
-            action=int(action),
-            x=float(x_bl),
-            y=float(y_bl),
-            rot=int(rot),
-            mask=self.mask,
-            action_space_n=int(self.action_space.n),
-            extra_info={"cell_i": int(i), "cell_j": int(j)},
-        )
-        if terminated or truncated:
-            # IMPORTANT: keep a stable observation schema for training/search code paths.
-            # When done, there is no next placement; return wrapper obs with an all-false mask.
-            self.mask = torch.zeros((int(self.action_space.n),), dtype=torch.bool, device=self.device)
-            return self._build_obs(), reward, terminated, truncated, info
-
-        self.mask = self.create_mask()
-        return self._build_obs(), reward, terminated, truncated, info
-
-
 if __name__ == "__main__":
     import time
 
@@ -262,9 +252,10 @@ if __name__ == "__main__":
     import networkx as nx
     import matplotlib.pyplot as plt
 
-    from envs.wrappers.candidate_set import CandidateSet
-    from envs.json_loader import load_env
-    from envs.visualizer import plot_layout
+    from envs.action_space import ActionSpace as CandidateSet
+    from envs.action import EnvAction
+    from envs.env_loader import load_env
+    from envs.env_visualizer import plot_layout
 
     def _as_numpy(x: object) -> np.ndarray:
         if torch.is_tensor(x):
@@ -353,62 +344,64 @@ if __name__ == "__main__":
         plt.tight_layout()
         plt.show()
 
-    ENV_JSON = "env_configs/constraints_01.json"
+    ENV_JSON = "envs/env_configs/constraints_01.json"
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
 
-    env = AlphaChipWrapperEnv(engine=engine, coarse_grid=32, rot=0)
+    adapter = AlphaChipDecisionAdapter(coarse_grid=32, rot=0)
 
     t0 = time.perf_counter()
-    obs, _info = env.reset(options=loaded.reset_kwargs)
+    _obs_env, _info = engine.reset(options=loaded.reset_kwargs)
+    adapter.bind(engine)
+    obs = adapter.build_observation()
+    candidates = adapter.build_action_space()
     dt_reset_ms = (time.perf_counter() - t0) * 1000.0
 
-    valid = int(obs["action_mask"].sum().item())
-    a = int(torch.where(obs["action_mask"])[0][0].item()) if valid > 0 else 0
+    valid = int(candidates.mask.sum().item())
+    a = int(torch.where(candidates.mask)[0][0].item()) if valid > 0 else 0
 
     # Print obs tensors + visualize graph structure.
     _print_alphachip_obs({k: obs[k] for k in obs.keys()})
     _plot_alphachip_graph({k: obs[k] for k in obs.keys()}, title="AlphaChip obs graph (reset)")
 
     # Build BL candidates for visualization (avoid plotting all invalid points).
-    gid = env.engine.remaining[0] if env.engine.remaining else None
-    g = int(env.coarse_grid)
-    idxs = torch.where(obs["action_mask"])[0]
-    xy = torch.zeros((int(idxs.numel()), 3), dtype=torch.long, device=device)
-    for t, ai in enumerate(idxs.tolist()):
-        x_bl, y_bl, rot, _i, _j = env.decode_action(int(ai))
-        xy[t, 0] = int(x_bl)
-        xy[t, 1] = int(y_bl)
-        xy[t, 2] = int(rot)
-
-    cand0 = CandidateSet(xyrot=xy, mask=torch.ones((xy.shape[0],), dtype=torch.bool, device=device), gid=gid, meta={"g": g})
-    plot_layout(env, candidate_set=cand0)
+    g = int(adapter.coarse_grid)
+    idxs = torch.where(candidates.mask)[0]
+    xy = candidates.xyrot[idxs]
+    cand0 = CandidateSet(
+        xyrot=xy,
+        mask=torch.ones((xy.shape[0],), dtype=torch.bool, device=device),
+        gid=candidates.gid,
+        meta={"g": g},
+    )
+    plot_layout(engine, action_space=cand0)
 
     t1 = time.perf_counter()
-    obs2, _r, _term, _trunc, _info2 = env.step(a)
+    placement = adapter.decode_action(a, candidates)
+    _obs_env2, _r, _term, _trunc, _info2 = engine.step_action(placement)
+    obs2 = adapter.build_observation()
+    candidates2 = adapter.build_action_space()
     dt_step_ms = (time.perf_counter() - t1) * 1000.0
 
     # Plot after one placement (new candidates)
-    if isinstance(obs2, dict) and ("action_mask" in obs2):
+    if int(candidates2.mask.shape[0]) > 0:
         _print_alphachip_obs({k: obs2[k] for k in obs2.keys()})
         _plot_alphachip_graph({k: obs2[k] for k in obs2.keys()}, title="AlphaChip obs graph (after 1 step)")
-        gid2 = env.engine.remaining[0] if env.engine.remaining else None
-        idxs2 = torch.where(obs2["action_mask"])[0]
-        xy2 = torch.zeros((int(idxs2.numel()), 3), dtype=torch.long, device=device)
-        for t, ai in enumerate(idxs2.tolist()):
-            x_bl, y_bl, rot, _i, _j = env.decode_action(int(ai))
-            xy2[t, 0] = int(x_bl)
-            xy2[t, 1] = int(y_bl)
-            xy2[t, 2] = int(rot)
-        cand1 = CandidateSet(xyrot=xy2, mask=torch.ones((xy2.shape[0],), dtype=torch.bool, device=device), gid=gid2, meta={"g": g})
-        plot_layout(env, candidate_set=cand1)
+        idxs2 = torch.where(candidates2.mask)[0]
+        xy2 = candidates2.xyrot[idxs2]
+        cand1 = CandidateSet(
+            xyrot=xy2,
+            mask=torch.ones((xy2.shape[0],), dtype=torch.bool, device=device),
+            gid=candidates2.gid,
+            meta={"g": g},
+        )
+        plot_layout(engine, action_space=cand1)
     else:
-        plot_layout(env, candidate_set=None)
+        plot_layout(engine, action_space=None)
 
-    print("[AlphaChipWrapperEnv demo]")
-    print(" env=", ENV_JSON, "device=", device, "G=", env.coarse_grid)
+    print("[AlphaChipDecisionAdapter demo]")
+    print(" env=", ENV_JSON, "device=", device, "G=", adapter.coarse_grid)
     print(" valid_actions=", valid, "first_valid_action=", a)
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")
-

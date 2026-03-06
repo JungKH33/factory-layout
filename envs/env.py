@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import gymnasium as gym
 import torch
 
-from .core.base import PlacementBase
-from .core.maps import GridMaps
-from .core.reward import AreaReward, CandidateBatch, FlowReward, RewardComposer, RewardContext
-from .core.static import StaticSpec
-
-
-GroupId = Union[int, str]
+from .placement.base import PlacementBase
+from .reward import (
+    AreaReward,
+    FlowReward,
+    RewardComposer,
+    TerminalReward,
+)
+from .placement.static import StaticSpec
+from .action import GroupId, EnvAction
+from .action_space import ActionSpace
+from .state import EnvState, FlowGraph, GridMaps
 
 # PlacementBase is defined in envs/base.py and imported above.
 # Re-exported here so external code can do: from envs.env import PlacementBase, GridMaps
@@ -55,7 +59,7 @@ class FactoryLayoutEnv(gym.Env):
         placement_areas: Optional[List[Dict[str, Any]]] = None,  # [{"id": str, "rect":[x0,y0,x1,y1]}, ...]
         device: Optional[torch.device] = None,
         max_steps: Optional[int] = None,
-        cost_scale: float = 100.0,
+        reward_scale: float = 100.0,
         penalty_weight: float = 50000.0,
         log: bool = False,
     ):
@@ -63,8 +67,8 @@ class FactoryLayoutEnv(gym.Env):
         self.grid_width = int(grid_width)
         self.grid_height = int(grid_height)
         self.device = device or (torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
-        self.group_specs = self._normalize_group_specs(group_specs)
-        self.group_flow = group_flow or {}
+        group_specs_norm = self._normalize_group_specs(group_specs)
+        group_flow_norm = dict(group_flow or {})
         self.forbidden_areas = list(forbidden_areas or [])
         self.default_weight = float(default_weight)
         self.default_height = float(default_height)
@@ -74,7 +78,7 @@ class FactoryLayoutEnv(gym.Env):
         self.dry_areas = list(dry_areas or [])
         self.placement_areas = list(placement_areas or [])
         self.max_steps = max_steps
-        self.cost_scale = float(cost_scale)
+        self.reward_scale = float(reward_scale)
         self.penalty_weight = float(penalty_weight)
         self.log = bool(log)
 
@@ -82,21 +86,13 @@ class FactoryLayoutEnv(gym.Env):
         self.action_space = gym.spaces.Discrete(1)
         self.observation_space = gym.spaces.Dict({})
 
-        # --- group id/index mapping (useful across wrappers) ---
+        # Engine static metadata (direct fields; no proxy properties).
+        self.group_specs = group_specs_norm
+        self.group_flow = group_flow_norm
         self.node_ids: List[GroupId] = sorted(self.group_specs.keys(), key=lambda x: str(x))
         self.gid_to_idx: Dict[GroupId, int] = {gid: i for i, gid in enumerate(self.node_ids)}
 
-        # Placement objects are the single source of truth for placed state.
-        self.placements: Dict[GroupId, PlacementBase] = {}
-        self.placed: set[GroupId] = set()
-        self.remaining: List[GroupId] = []
-        self._step_count = 0
-        # Per flow-edge argmin port pair cache: (src_gid, dst_gid) -> ((exit_x, exit_y), (entry_x, entry_y))
-        # Populated after each placement by _rebuild_flow_port_pairs().
-        self._flow_port_pairs: Dict[Tuple[GroupId, GroupId], Tuple[Tuple[float, float], Tuple[float, float]]] = {}
-
-        # Grid map tensors (performance cache).
-        self._maps = GridMaps(
+        maps = GridMaps(
             grid_height=self.grid_height,
             grid_width=self.grid_width,
             device=self.device,
@@ -109,6 +105,12 @@ class FactoryLayoutEnv(gym.Env):
             dry_areas=self.dry_areas,
             placement_areas=self.placement_areas,
         )
+        flow = FlowGraph(self.group_flow, device=self.device)
+        self._state = EnvState.empty(
+            maps=maps,
+            flow=flow,
+            group_specs=self.group_specs,
+        )
 
         # Single RewardComposer used for both score() (cost) and delta() (delta_cost).
         self._reward = RewardComposer(
@@ -120,6 +122,16 @@ class FactoryLayoutEnv(gym.Env):
                 "flow": 1.0,
                 "area": 1.0,
             },
+            reward_scale=float(self.reward_scale),
+        )
+        group_areas = {
+            gid: float(spec.width) * float(spec.height)
+            for gid, spec in self.group_specs.items()
+        }
+        self._terminal = TerminalReward(
+            penalty_weight=float(self.penalty_weight),
+            reward_scale=float(self.reward_scale),
+            group_areas=group_areas,
         )
 
     def _normalize_group_specs(self, group_specs: Dict[GroupId, StaticSpec]) -> Dict[GroupId, StaticSpec]:
@@ -156,6 +168,20 @@ class FactoryLayoutEnv(gym.Env):
             raise KeyError(f"unknown gid={gid!r}")
         return geom
 
+    def get_maps(self) -> GridMaps:
+        """Public map bundle for wrappers/agents/postprocess modules."""
+        return self._state.maps
+
+    def get_state(self) -> EnvState:
+        """Runtime mutable state bundle."""
+        return self._state
+
+    def set_state(self, state: EnvState) -> None:
+        """Restore runtime state bundle."""
+        if not isinstance(state, EnvState):
+            raise TypeError(f"state must be EnvState, got {type(state).__name__}")
+        self._state.restore(state)
+
     def _as_long_tensor(self, v: object, *, name: str) -> torch.Tensor:
         """Coerce scalar/tensor values to integer tensor [N] with integer-value validation."""
         if torch.is_tensor(v):
@@ -170,104 +196,20 @@ class FactoryLayoutEnv(gym.Env):
             return t.to(dtype=torch.long).view(-1)
         return torch.tensor([int(v)], dtype=torch.long, device=self.device)
 
-    def _ensure_placement(self, gid: GroupId) -> object:
-        p = self.placements.get(gid, None)
-        if p is not None:
-            return p
-        raise KeyError(f"placement missing for gid={gid!r}")
-
-    def _placed_io_tensors(
-        self,
-    ) -> Tuple[List[GroupId], torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        placed_nodes = list(self.placed)
-        p = len(placed_nodes)
-        if p == 0:
-            empty_xy = torch.empty((0, 1, 2), dtype=torch.float32, device=self.device)
-            empty_mask = torch.zeros((0, 1), dtype=torch.bool, device=self.device)
-            return placed_nodes, empty_xy, empty_xy, empty_mask, empty_mask
-
-        # Collect all ports per facility (fallback to center if none)
-        all_entries: List[List[Tuple[float, float]]] = []
-        all_exits: List[List[Tuple[float, float]]] = []
-        for pgid in placed_nodes:
-            placement = self._ensure_placement(pgid)
-            cx = float(getattr(placement, "cx", 0.0))
-            cy = float(getattr(placement, "cy", 0.0))
-
-            def _to_pairs(src: Any, fallback: Tuple[float, float]) -> List[Tuple[float, float]]:
-                if torch.is_tensor(src):
-                    t = src.to(dtype=torch.float32).view(-1, 2)
-                    return [(float(t[k, 0]), float(t[k, 1])) for k in range(int(t.shape[0]))] or [fallback]
-                if isinstance(src, (list, tuple)) and len(src) > 0:
-                    return [(float(pt[0]), float(pt[1])) for pt in src]
-                return [fallback]
-
-            all_entries.append(_to_pairs(getattr(placement, "entries", []), (cx, cy)))
-            all_exits.append(_to_pairs(getattr(placement, "exits", []), (cx, cy)))
-
-        max_e = max(len(e) for e in all_entries)
-        max_x = max(len(x) for x in all_exits)
-
-        entries_t = torch.zeros((p, max_e, 2), dtype=torch.float32, device=self.device)
-        exits_t = torch.zeros((p, max_x, 2), dtype=torch.float32, device=self.device)
-        entries_mask = torch.zeros((p, max_e), dtype=torch.bool, device=self.device)
-        exits_mask = torch.zeros((p, max_x), dtype=torch.bool, device=self.device)
-
-        for i, ports in enumerate(all_entries):
-            for j, (x, y) in enumerate(ports):
-                entries_t[i, j, 0] = x
-                entries_t[i, j, 1] = y
-                entries_mask[i, j] = True
-
-        for i, ports in enumerate(all_exits):
-            for j, (x, y) in enumerate(ports):
-                exits_t[i, j, 0] = x
-                exits_t[i, j, 1] = y
-                exits_mask[i, j] = True
-
-        return placed_nodes, entries_t, exits_t, entries_mask, exits_mask
-
-    def _placed_bbox(self, placed_nodes: List[GroupId]) -> Tuple[float, float, float, float]:
-        """Return (min_x, max_x, min_y, max_y) over all placed facilities (body bbox, no clearance)."""
-        if not placed_nodes:
-            return 0.0, 0.0, 0.0, 0.0
-        min_x, max_x = float("inf"), float("-inf")
-        min_y, max_y = float("inf"), float("-inf")
-        for pgid in placed_nodes:
-            pl = self._ensure_placement(pgid)
-            min_x = min(min_x, float(getattr(pl, "min_x")))
-            max_x = max(max_x, float(getattr(pl, "max_x")))
-            min_y = min(min_y, float(getattr(pl, "min_y")))
-            max_y = max(max_y, float(getattr(pl, "max_y")))
-        return min_x, max_x, min_y, max_y
-
-    def _build_flow_w(self, placed_nodes: List[GroupId]) -> torch.Tensor:
-        """Build [P, P] flow weight matrix from group_flow for the given placed_nodes order."""
-        p = len(placed_nodes)
-        flow_w = torch.zeros((p, p), dtype=torch.float32, device=self.device)
-        for i, src in enumerate(placed_nodes):
-            out_edges = self.group_flow.get(src, {})
-            for j, dst in enumerate(placed_nodes):
-                flow_w[i, j] = float(out_edges.get(dst, 0.0))
-        return flow_w
-
     def _rebuild_flow_port_pairs(self) -> None:
         """FlowReward.score(return_argmin=True)로 flow edge별 최적 port pair 캐시 재구성.
 
-        self._flow_port_pairs[(src_gid, dst_gid)] = ((exit_x, exit_y), (entry_x, entry_y))
+        self._state.flow_port_pairs[(src_gid, dst_gid)] = ((exit_x, exit_y), (entry_x, entry_y))
         flow weight가 0인 엣지는 포함하지 않음.
         """
         flow_comp = self._reward.components.get("flow")
         if flow_comp is None:
             return
-        placed_nodes, placed_entries, placed_exits, placed_entries_mask, placed_exits_mask = (
-            self._placed_io_tensors()
-        )
-        p = len(placed_nodes)
-        if p == 0:
-            self._flow_port_pairs = {}
+        placed_nodes, placed_entries, placed_exits, placed_entries_mask, placed_exits_mask = self._state.io_tensors()
+        if len(placed_nodes) == 0:
+            self._state.clear_flow_port_pairs()
             return
-        flow_w = self._build_flow_w(placed_nodes)
+        flow_w = self._state.build_flow_w()
         _, c_idx, p_idx = flow_comp.score(
             placed_entries=placed_entries,
             placed_exits=placed_exits,
@@ -277,7 +219,7 @@ class FactoryLayoutEnv(gym.Env):
             return_argmin=True,
         )
         if c_idx is None or p_idx is None:
-            self._flow_port_pairs = {}
+            self._state.clear_flow_port_pairs()
             return
         pairs: Dict[Tuple[GroupId, GroupId], Tuple[Tuple[float, float], Tuple[float, float]]] = {}
         for m, src_gid in enumerate(placed_nodes):
@@ -289,57 +231,7 @@ class FactoryLayoutEnv(gym.Env):
                 exit_xy = (float(placed_exits[m, ci, 0].item()), float(placed_exits[m, ci, 1].item()))
                 entry_xy = (float(placed_entries[t, pi, 0].item()), float(placed_entries[t, pi, 1].item()))
                 pairs[(src_gid, dst_gid)] = (exit_xy, entry_xy)
-        self._flow_port_pairs = pairs
-
-    def get_placeable_mask(self, gid: GroupId, rot: int = 0) -> torch.Tensor:
-        """전체 그리드의 배치 가능 마스크 계산."""
-        if gid not in self.group_specs:
-            return torch.zeros((self.grid_height, self.grid_width), dtype=torch.bool, device=self.device)
-        geom = self._group_spec(gid)
-        return geom.is_placeable_mask(
-            rot=int(rot),
-            invalid=self._maps.invalid,
-            clear_invalid=self._maps.clear_invalid,
-        )
-
-    def count_placeable(self, gid: GroupId, rot: int = 0) -> int:
-        """배치 가능한 위치 개수 반환.
-        
-        Args:
-            gid: 그룹 ID
-            rot: rotation (0, 90, 180, 270)
-        
-        Returns:
-            int: 배치 가능한 위치 개수
-        """
-        mask = self.get_placeable_mask(gid, rot)
-        return int(mask.sum().item())
-
-    def is_placeable_batch(
-        self, *, gid: GroupId, x: object, y: object, rot: object
-    ) -> torch.Tensor:
-        """주어진 좌표들의 배치 가능 여부 batch 검사."""
-        if gid not in self.group_specs:
-            scalar_input = not (torch.is_tensor(x) or torch.is_tensor(y) or torch.is_tensor(rot))
-            if scalar_input:
-                n = 1
-            elif torch.is_tensor(x):
-                n = int(x.to(device=self.device).view(-1).numel())
-            elif torch.is_tensor(y):
-                n = int(y.to(device=self.device).view(-1).numel())
-            elif torch.is_tensor(rot):
-                n = int(rot.to(device=self.device).view(-1).numel())
-            else:
-                n = 1
-            return torch.zeros((n,), dtype=torch.bool, device=self.device)
-        geom = self._group_spec(gid)
-        return geom.is_placeable_batch(
-            x=x,
-            y=y,
-            rot=rot,
-            invalid=self._maps.invalid,
-            clear_invalid=self._maps.clear_invalid,
-        )
+        self._state.set_flow_port_pairs(pairs)
 
     def delta_cost(self, *, gid: GroupId, x: object, y: object, rot: object):
         """배치 시 예상 Δcost (unscaled, raw).
@@ -374,175 +266,72 @@ class FactoryLayoutEnv(gym.Env):
             rot=r,
             needed=needed,
         )
-        if "entries" in feature_map:
-            feature_map["entries_mask"] = torch.ones(
-                feature_map["entries"].shape[:2],
-                dtype=torch.bool,
-                device=self.device,
+        xyrot = torch.stack([x_bl, y_bl, r], dim=-1).to(dtype=torch.long, device=self.device)
+        entries = feature_map.get("entries", None)
+        exits = feature_map.get("exits", None)
+        entries_mask = None
+        exits_mask = None
+        if entries is not None:
+            entries = entries.to(device=self.device)
+            entries_mask = torch.ones(
+                entries.shape[:2], dtype=torch.bool, device=self.device,
             )
-        if "exits" in feature_map:
-            feature_map["exits_mask"] = torch.ones(
-                feature_map["exits"].shape[:2],
-                dtype=torch.bool,
-                device=self.device,
+        if exits is not None:
+            exits = exits.to(device=self.device)
+            exits_mask = torch.ones(
+                exits.shape[:2], dtype=torch.bool, device=self.device,
             )
-        batch = CandidateBatch.from_feature_map(
-            feature_map,
-            required=needed,
-            device=self.device,
+        aspace = ActionSpace(
+            xyrot=xyrot,
+            mask=torch.ones((M,), dtype=torch.bool, device=self.device),
+            gid=gid,
+            entries=entries,
+            exits=exits,
+            entries_mask=entries_mask,
+            exits_mask=exits_mask,
+            min_x=feature_map.get("min_x", None),
+            max_x=feature_map.get("max_x", None),
+            min_y=feature_map.get("min_y", None),
+            max_y=feature_map.get("max_y", None),
         )
-
-        placed_nodes, placed_entries, placed_exits, placed_entries_mask, placed_exits_mask = self._placed_io_tensors()
-        p = len(placed_nodes)
-        w_out = torch.zeros((p,), dtype=torch.float32, device=self.device)
-        w_in = torch.zeros((p,), dtype=torch.float32, device=self.device)
-        out_edges = self.group_flow.get(gid, {})
-        for i, pgid in enumerate(placed_nodes):
-            w_out[i] = float(out_edges.get(pgid, 0.0))
-            w_in[i] = float(self.group_flow.get(pgid, {}).get(gid, 0.0))
-        cur_min_x, cur_max_x, cur_min_y, cur_max_y = self._placed_bbox(placed_nodes)
-        ctx = RewardContext(
-            placed_count=len(placed_nodes),
-            cur_min_x=cur_min_x,
-            cur_max_x=cur_max_x,
-            cur_min_y=cur_min_y,
-            cur_max_y=cur_max_y,
-            placed_entries=placed_entries,
-            placed_exits=placed_exits,
-            placed_entries_mask=placed_entries_mask,
-            placed_exits_mask=placed_exits_mask,
-            w_out=w_out,
-            w_in=w_in,
-        )
-        delta = self._reward.delta(ctx, batch).to(dtype=torch.float32)
+        delta = self._reward.delta(self._state, aspace, gid=gid).to(dtype=torch.float32)
         if scalar_input:
             return float(delta[0].item())
         return delta
 
-    def placement_reward(self, *, gid: GroupId, x: object, y: object, rot: object):
-        """배치 시 예상 reward (scaled).
-
-        반환: -Δcost / cost_scale (높을수록 좋은 배치)
-        """
-        dc = self.delta_cost(gid=gid, x=x, y=y, rot=rot)
-        if torch.is_tensor(dc):
-            return -dc / float(self.cost_scale)
-        return -float(dc) / float(self.cost_scale)
-
-    def terminal_reward(self) -> float:
-        """현재 상태의 예상 최종 reward (MCTS leaf 평가용).
-
-        반환: -total_cost() / cost_scale
-        """
-        return -float(self.total_cost()) / float(self.cost_scale)
-
-    @property
-    def positions(self) -> Dict[GroupId, Tuple[int, int, int]]:
-        """(x_bl, y_bl, rot) per placed gid — backward compat with old env.py.
-
-        호출처: search/mcts.py, search/beam.py, webui/session.py,
-                postprocess/dynamic_env.py, postprocess/dynamic_group.py,
-                wrappers/alphachip.py
-        """
-        return {gid: (int(p.x_bl), int(p.y_bl), int(p.rot)) for gid, p in self.placements.items()}
-
-    def try_place(self, gid: GroupId, x: float, y: float, rot: int) -> bool:
-        """Place a group if feasible; returns True on success.
-
-        This mirrors `env.py` semantics (placements/placed/remaining only).
-        NOTE: Engine-internal cached maps are NOT updated here.
-        Use `_apply_place(..., update_caches=True)` when you need cached-map consistency.
-        """
-        if gid not in self.group_specs:
-            return False
-        x_bl = int(x)
-        y_bl = int(y)
-        r = int(rot)
-        geom = self._group_spec(gid)
-        try:
-            placeable = bool(
-                geom.is_placeable(
-                    x_bl=int(x_bl),
-                    y_bl=int(y_bl),
-                    rot=int(r),
-                    invalid=self._maps.invalid,
-                    clear_invalid=self._maps.clear_invalid,
-                )
-            )
-        except Exception:
-            placeable = False
-        if not placeable:
-            return False
-        try:
-            p = self._group_spec(gid).build_placement(
-                x_bl=int(x_bl),
-                y_bl=int(y_bl),
-                rot=int(r),
-            )
-        except Exception:
-            return False
-        self._apply_resolved_placement(gid, p, update_caches=False)
-        return True
-
-    def _apply_place(self, gid: GroupId, x: float, y: float, rot: int, *, update_caches: bool) -> None:
-        """Internal: apply a placement and optionally update engine caches."""
-        x_bl = int(x)
-        y_bl = int(y)
-        r = int(rot)
-        p = self._group_spec(gid).build_placement(
-            x_bl=int(x_bl),
-            y_bl=int(y_bl),
-            rot=int(r),
-        )
-        self._apply_resolved_placement(gid, p, update_caches=update_caches)
+    def _normalize_action(self, action: EnvAction) -> Tuple[GroupId, int, int, int]:
+        if not isinstance(action, EnvAction):
+            raise TypeError(f"expected EnvAction, got {type(action).__name__}")
+        gid_eff: Optional[GroupId] = action.gid
+        if gid_eff is None:
+            if not self._state.remaining:
+                raise ValueError("action.gid is None but env.get_state().remaining is empty")
+            gid_eff = self._state.remaining[0]
+        if gid_eff not in self.group_specs:
+            raise KeyError(f"unknown gid={gid_eff!r}")
+        return gid_eff, int(action.x), int(action.y), int(action.rot)
 
     def _apply_resolved_placement(
         self,
         gid: GroupId,
         placement: PlacementBase,
-        *,
-        update_caches: bool,
     ) -> None:
-        self.placements[gid] = placement
-        self.placed.add(gid)
-        if gid in self.remaining:
-            self.remaining.remove(gid)
-        if update_caches:
-            self._maps.paint(placement)
-            # Keep zone invalid consistent for the *next* group after any real placement.
-            # This prevents stale zone_invalid when callers use step_masked() (wrappers).
-            next_geom = self.group_specs.get(self.remaining[0]) if self.remaining else None
-            self._maps.update_zone(next_geom)
-            self._rebuild_flow_port_pairs()
+        self._state.place(gid=gid, placement=placement)
+        self._rebuild_flow_port_pairs()
 
-    def apply_dynamic_placement(self, gid: GroupId, placement: object, *, update_caches: bool = True) -> None:
+    def apply_dynamic_placement(self, gid: GroupId, placement: object) -> None:
         """Apply a pre-resolved dynamic placement object (DynamicPlacement-compatible)."""
         if gid not in self.group_specs:
             raise KeyError(f"unknown gid={gid!r}")
-        self._apply_resolved_placement(gid, placement, update_caches=bool(update_caches))
+        self._apply_resolved_placement(gid, placement)
 
     # ---- objective ----
 
     def cost(self) -> float:
         """현재 배치 목적함수 절댓값: weighted L1 flow + HPWL compactness."""
-        if not self.placed:
+        if not self._state.placed:
             return 0.0
-
-        placed_nodes, placed_entries, placed_exits, placed_entries_mask, placed_exits_mask = self._placed_io_tensors()
-        min_x, max_x, min_y, max_y = self._placed_bbox(placed_nodes)
-        score_ctx = RewardContext(
-            placed_count=len(placed_nodes),
-            cur_min_x=min_x,
-            cur_max_x=max_x,
-            cur_min_y=min_y,
-            cur_max_y=max_y,
-            placed_entries=placed_entries,
-            placed_exits=placed_exits,
-            placed_entries_mask=placed_entries_mask,
-            placed_exits_mask=placed_exits_mask,
-            flow_w=self._build_flow_w(placed_nodes),
-        )
-        return float(self._reward.score(score_ctx).item())
+        return float(self._reward.score(self._state).item())
 
     def total_cost(self) -> float:
         """cost() + 미배치 페널티 (TopK 정렬·비교용).
@@ -550,34 +339,32 @@ class FactoryLayoutEnv(gym.Env):
         완료된 레이아웃: cost()와 동일.
         미완료: cost() + penalty_weight * remaining_ratio.
         """
-        return self.cost() + float(self.penalty_weight) * self._remaining_area_ratio()
+        return float(self.cost()) + float(self._terminal.penalty(self._state))
 
-    def _remaining_area_ratio(self) -> float:
-        """Remaining area / total area ratio in [0,1]. Mirrors env.py."""
-        total_area = 0.0
-        remaining_area = 0.0
-        for gid, spec in self.group_specs.items():
-            a = float(spec.width) * float(spec.height)
-            total_area += a
-            if gid in self.remaining:
-                remaining_area += a
-        if total_area <= 0.0:
-            return 1.0
-        ratio = remaining_area / total_area
-        if ratio < 0.0:
-            return 0.0
-        if ratio > 1.0:
-            return 1.0
-        return float(ratio)
-
-    def _failure_penalty(self) -> float:
+    def failure_penalty(self) -> float:
         """Penalty reward for failed placement or no valid actions (negative).
         
-        스케일 통일: -(penalty_weight * remaining) / cost_scale
-        이로써 최종 reward = -total_cost() / cost_scale 관계 성립.
+        스케일 통일: -(penalty_weight * remaining) / reward_scale
+        이로써 최종 reward = -total_cost() / reward_scale 관계 성립.
         """
-        raw_penalty = float(self.penalty_weight) * self._remaining_area_ratio()
-        return -raw_penalty / float(self.cost_scale)
+        return self._terminal.failure_reward(self._state)
+
+    def reorder_remaining(self, ordered_remaining: List[GroupId]) -> None:
+        """Replace `remaining` order with a validated permutation of current remaining gids."""
+        if not isinstance(ordered_remaining, list):
+            raise TypeError("ordered_remaining must be a list")
+        if len(ordered_remaining) != len(self._state.remaining):
+            raise ValueError(
+                f"ordered_remaining length mismatch: got {len(ordered_remaining)}, expected {len(self._state.remaining)}"
+            )
+        seen = set()
+        for gid in ordered_remaining:
+            if gid not in self._state.remaining:
+                raise ValueError(f"ordered_remaining contains gid not in current remaining: {gid!r}")
+            if gid in seen:
+                raise ValueError(f"ordered_remaining contains duplicate gid: {gid!r}")
+            seen.add(gid)
+        self._state.set_remaining(list(ordered_remaining), update_current_gid=True)
     
     # ---- Export API ----
     
@@ -589,8 +376,8 @@ class FactoryLayoutEnv(gym.Env):
         """
         # 배치 정보
         placements = []
-        for gid in sorted(self.placed, key=lambda x: str(x)):
-            p = self.placements.get(gid, None)
+        for gid in sorted(self._state.placed, key=lambda x: str(x)):
+            p = self._state.placements.get(gid, None)
             if p is not None:
                 placements.append({
                     "gid": gid,
@@ -649,185 +436,121 @@ class FactoryLayoutEnv(gym.Env):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def _fail(
-        self, reason: str, **extra: Any
-    ) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
+    def _fail(self, reason: str) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
         """실패 처리 통합 헬퍼."""
-        reward = self._failure_penalty()
-        info: Dict[str, Any] = {"reason": reason, "invalid": True}
-        info.update(extra)
+        reward = self.failure_penalty()
+        info: Dict[str, Any] = {"reason": reason}
 
         if self.log:
             base_cost = float(self.cost())
-            penalty = float(self.penalty_weight) * self._remaining_area_ratio()
+            penalty = float(self._terminal.penalty(self._state))
             total_cost = base_cost + penalty
             print(
-                f"[env] fail: reason={reason} remaining={len(self.remaining)} "
+                f"[env] fail: reason={reason} remaining={len(self._state.remaining)} "
                 f"cost={total_cost:.3f} (base={base_cost:.3f} + penalty={penalty:.3f}) reward={reward:.3f}"
             )
 
-        return self._build_obs(), float(reward), False, True, info
+        return self.build_observation(), float(reward), False, True, info
 
-    def _build_obs(self) -> Dict[str, torch.Tensor]:
-        """Return *core* observation (model-agnostic).
+    def build_observation(self) -> Dict[str, torch.Tensor]:
+        """Return model-agnostic engine observation.
 
         Policy-specific wrappers should attach their own extra observation fields
-        on top of this core dict.
+        on top of this base dict.
         """
-        gid = self.remaining[0] if self.remaining else self.node_ids[0]
-        spec = self._group_spec(gid)
-
         N = int(len(self.node_ids))
         placed_mask = torch.zeros((N,), dtype=torch.bool, device=self.device)
         pos = torch.full((N, 3), -1, dtype=torch.long, device=self.device)  # (x_bl,y_bl,rot) or -1
-        for gid2 in self.placed:
+        for gid2 in self._state.placed:
             idx = self.gid_to_idx.get(gid2, None)
             if idx is None:
                 continue
             placed_mask[int(idx)] = True
-            p = self.placements.get(gid2, None)
+            p = self._state.placements.get(gid2, None)
             if p is None:
                 continue
             pos[int(idx), 0] = int(getattr(p, "x_bl"))
             pos[int(idx), 1] = int(getattr(p, "y_bl"))
             pos[int(idx), 2] = int(getattr(p, "rot"))
 
-        # current gid index (group node list)
-        cur_idx = int(self.gid_to_idx.get(gid, 0))
-
         obs: Dict[str, torch.Tensor] = {
-            "current_gid_idx": torch.tensor([cur_idx], dtype=torch.long, device=self.device),
-            # NOTE: normalized to canvas (grid) size for scale-stable learning.
-            "next_group_wh": torch.tensor(
-                [float(spec.width) / float(self.grid_width), float(spec.height) / float(self.grid_height)],
-                dtype=torch.float32,
-                device=self.device,
-            ),
             "placed_mask": placed_mask,
             "positions_bl": pos,
-            "step_count": torch.tensor([int(self._step_count)], dtype=torch.long, device=self.device),
+            "step_count": torch.tensor([int(self._state.step_count)], dtype=torch.long, device=self.device),
         }
         return obs
 
     def step_action(
         self,
-        *,
-        x: float,
-        y: float,
-        rot: int,
-        # 옵션: mask 관련 (없으면 검사 안함)
-        action: Optional[int] = None,
-        mask: Optional[torch.Tensor] = None,
-        action_space_n: Optional[int] = None,
-        extra_info: Optional[Dict[str, Any]] = None,
+        action: EnvAction,
     ) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
-        """통합 step 메서드: 배치 시도 + 옵션 mask 검사.
-
-        Args:
-            x, y, rot: 배치 좌표 (bottom-left, rotation)
-            action: (옵션) discrete action index (mask 검사용)
-            mask: (옵션) action mask (True=valid)
-            action_space_n: (옵션) action space 크기
-            extra_info: (옵션) info에 추가할 정보
-        """
-        self._step_count += 1
-
-        # 0. extra_info 처리
-        info: Dict[str, Any] = {}
-        if extra_info:
-            info.update(dict(extra_info))
-
+        """Place a single `EnvAction` (wrapper owns mask/index validation)."""
         # 1. 이미 완료된 경우
-        if not self.remaining:
-            return self._build_obs(), 0.0, True, False, {"reason": "done", "invalid": False}
+        if not self._state.remaining:
+            self._state.step(apply=False)
+            return self.build_observation(), 0.0, True, False, {"reason": "done"}
 
-        # 2. Mask 검사 (파라미터가 있을 때만)
-        if mask is not None:
-            if int(mask.to(torch.int64).sum().item()) == 0:
-                return self._fail("no_valid_actions")
-            if action is not None and action_space_n is not None:
-                if int(action) < 0 or int(action) >= int(action_space_n):
-                    return self._fail("action_out_of_range")
-                if not bool(mask[int(action)].item()):
-                    return self._fail("masked_action")
+        try:
+            gid_eff, x_bl, y_bl, r = self._normalize_action(action)
+        except TypeError:
+            raise
+        except Exception:
+            self._state.step(apply=False)
+            return self._fail("invalid_action_payload")
+        if gid_eff not in self._state.remaining:
+            self._state.step(apply=False)
+            return self._fail("gid_not_remaining")
 
-        # 3. 배치 시도
-        gid = self.remaining[0]
-        x_bl = int(x)
-        y_bl = int(y)
-        r = int(rot)
-        geom = self._group_spec(gid)
+        # gid별 zone 제약을 action 시점에 동기화한다.
+        self._state.set_current_gid(gid_eff)
+        geom = self._group_spec(gid_eff)
         try:
             placeable = bool(
                 geom.is_placeable(
                     x_bl=int(x_bl),
                     y_bl=int(y_bl),
                     rot=int(r),
-                    invalid=self._maps.invalid,
-                    clear_invalid=self._maps.clear_invalid,
+                    invalid=self._state.invalid_map,
+                    clear_invalid=self._state.clear_invalid_map,
                 )
             )
         except Exception:
             placeable = False
         if not placeable:
-            return self._fail("not_placeable", gid=gid, x=int(x_bl), y=int(y_bl), rot=int(r))
+            self._state.set_current_gid(self._state.remaining[0] if self._state.remaining else None)
+            self._state.step(apply=False)
+            return self._fail("not_placeable")
 
         # 4. 성공 배치 (delta_cost: placed 상태 변경 전 Δcost 계산 → apply)
-        delta = float(self.delta_cost(gid=gid, x=x_bl, y=y_bl, rot=r))
-        self._apply_place(gid, float(x_bl), float(y_bl), int(r), update_caches=True)
+        delta = float(self.delta_cost(gid=gid_eff, x=x_bl, y=y_bl, rot=r))
+        placement = self._group_spec(gid_eff).build_placement(
+            x_bl=int(x_bl),
+            y_bl=int(y_bl),
+            rot=int(r),
+        )
+        self._state.step(
+            apply=True,
+            gid=gid_eff,
+            placement=placement,
+        )
+        self._rebuild_flow_port_pairs()
 
-        reward = -delta / float(self.cost_scale)
-        terminated = len(self.remaining) == 0
-        truncated = self.max_steps is not None and self._step_count >= self.max_steps
+        reward = float(self._reward.to_reward(delta))
+        terminated = len(self._state.remaining) == 0
+        truncated = self.max_steps is not None and self._state.step_count >= self.max_steps
 
-        info.update({
-            "reason": "placed",
-            "invalid": False,
-            "gid": gid,
-            "x": int(x_bl),
-            "y": int(y_bl),
-            "rot": int(r),
-        })
+        info: Dict[str, Any] = {"reason": "placed"}
 
         # 5. 로깅
         if self.log and (terminated or truncated):
             total_cost = self.total_cost()
             print(
                 f"[env] end: terminated={terminated} truncated={truncated} "
-                f"remaining={len(self.remaining)} placed={len(self.placed)} step={self._step_count} "
+                f"remaining={len(self._state.remaining)} placed={len(self._state.placed)} step={self._state.step_count} "
                 f"cost={total_cost:.3f} reason=placed reward={reward:.3f}"
             )
 
-        return self._build_obs(), float(reward), bool(terminated), bool(truncated), info
-
-    # --- Backward-compatible aliases ---
-    def step_place(
-        self, *, x: float, y: float, rot: int
-    ) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
-        """단순 배치 API (backward-compatible). step_action() 호출."""
-        return self.step_action(x=x, y=y, rot=rot)
-
-    def step_masked(
-        self,
-        *,
-        action: int,
-        x: float,
-        y: float,
-        rot: int,
-        mask: Optional[torch.Tensor],
-        action_space_n: int,
-        extra_info: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[Dict[str, torch.Tensor], float, bool, bool, Dict[str, Any]]:
-        """Wrapper용 API (backward-compatible). step_action() 호출."""
-        return self.step_action(
-            x=x,
-            y=y,
-            rot=rot,
-            action=action,
-            mask=mask,
-            action_space_n=action_space_n,
-            extra_info=extra_info,
-        )
+        return self.build_observation(), float(reward), bool(terminated), bool(truncated), info
 
     # ---- gym api ----
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None):
@@ -836,52 +559,8 @@ class FactoryLayoutEnv(gym.Env):
         initial_positions = options.get("initial_positions", None)
         remaining_order = options.get("remaining_order", None)
 
-        self.placements = {}
-        self.placed = set()
-        self._flow_port_pairs = {}
-
-        # Base order: "harder-first" heuristic.
-        #
-        # TEMP (requested): difficulty = facility_area / free_area.
-        # - invalid_area: inv.sum() where inv = static_only | zone_invalid_for_gid(gid)
-        # - free_area: total_area - invalid_area
-        # - facility_area: footprint area (w*h)
-        # Larger difficulty => bigger footprint relative to available free space => placed earlier.
-        #
-        # TODO(ord1): Restore placeable(K/T) ordering using conv2d-based top-left feasibility.
-        ordering: List[Tuple[float, float, GroupId, int]] = []
-        static_only = self._maps.static_invalid  # no occupancy at reset-time
-        for gid in self.group_specs.keys():
-            gg = self.group_specs[gid]
-            inv = static_only | self._maps.zone_for_geom(self.group_specs[gid])
-            facility_area = float(gg.width) * float(gg.height)
-            # invalid_area (requested): true invalid area on grid (cell units; 1 cell == 1 area unit here)
-            invalid_area = int(inv.to(torch.int64).sum().item())
-            total_area = int(self.grid_width) * int(self.grid_height)
-            free_area = max(1, int(total_area) - int(invalid_area))
-            denom = float(free_area)
-            difficulty = float(facility_area) / float(denom)
-            ordering.append((difficulty, facility_area, gid, invalid_area))
-
-        # Sort:
-        # 1) difficulty descending (harder first)
-        # 2) facility_area descending (bigger first among equally hard)
-        # 3) gid for stable order
-        ordering.sort(key=lambda t: (-t[0], -t[1], str(t[2])))
-        base_remaining = [gid for _diff, _area, gid, _inv in ordering]
-
-        if self.log:
-            print("[reset_order] harder-first by difficulty (=facility_area/free_area)")
-            for rank, (diff, area, gid, invalid_area) in enumerate(ordering, start=1):
-                total_area = int(self.grid_width) * int(self.grid_height)
-                free_area = max(1, int(total_area) - int(invalid_area))
-                print(
-                    f"  {rank}/{len(ordering)} gid={gid} "
-                    f"facility_area={area:.1f} "
-                    f"invalid_area={invalid_area} "
-                    f"free_area={free_area} "
-                    f"difficulty={diff:.6g}"
-                )
+        # Base order: 그대로 입력 순서 (env-side remaining 정렬 없음).
+        base_remaining = list(self.group_specs.keys())
         if remaining_order is not None:
             if not isinstance(remaining_order, list):
                 raise ValueError("reset(options): remaining_order must be a list of group ids")
@@ -895,12 +574,10 @@ class FactoryLayoutEnv(gym.Env):
                 seen.add(gid)
             # Keep order provided, append missing groups by base order.
             rest = [gid for gid in base_remaining if gid not in seen]
-            self.remaining = list(remaining_order) + rest
+            remaining = list(remaining_order) + rest
         else:
-            self.remaining = list(base_remaining)
-
-        self._step_count = 0
-        self._maps.reset()
+            remaining = list(base_remaining)
+        self._state.reset_runtime(remaining=remaining)
 
         # Apply validated initial placements (and sync caches).
         if initial_positions is not None:
@@ -914,7 +591,7 @@ class FactoryLayoutEnv(gym.Env):
                 x = int(pose[0])
                 y = int(pose[1])
                 rot = int(pose[2])
-                if gid in self.placed:
+                if gid in self._state.placed:
                     raise ValueError(f"reset(options): initial_positions contains duplicate gid: {gid!r}")
                 geom = self._group_spec(gid)
                 try:
@@ -923,8 +600,8 @@ class FactoryLayoutEnv(gym.Env):
                             x_bl=int(x),
                             y_bl=int(y),
                             rot=int(rot),
-                            invalid=self._maps.invalid,
-                            clear_invalid=self._maps.clear_invalid,
+                            invalid=self._state.invalid_map,
+                            clear_invalid=self._state.clear_invalid_map,
                         )
                     )
                 except Exception:
@@ -934,60 +611,24 @@ class FactoryLayoutEnv(gym.Env):
                         f"reset(options): invalid initial placement gid={gid!r} pose=({x},{y},{rot}) - placing anyway",
                         stacklevel=2,
                     )
-                self._apply_place(gid, float(x), float(y), int(rot), update_caches=True)
+                placement = geom.build_placement(
+                    x_bl=int(x),
+                    y_bl=int(y),
+                    rot=int(rot),
+                )
+                self._apply_resolved_placement(gid, placement)
+        return self.build_observation(), {}
 
-        # Recompute zone for the next group (runs regardless of initial_positions).
-        next_geom = self.group_specs.get(self.remaining[0]) if self.remaining else None
-        self._maps.update_zone(next_geom)
-        return self._build_obs(), {}
-
-    # ---- snapshot api (for search/MCTS) ----
-    def get_snapshot(self) -> Dict[str, object]:
-        """Return a deep-ish snapshot for deterministic restore in search algorithms.
-
-        Notes:
-        - This is additive (does not change training/inference behavior).
-        - Tensors are cloned to ensure isolation across rollouts.
-        """
-        return {
-            "placements": dict(self.placements),
-            "placed": set(self.placed),
-            "remaining": list(self.remaining),
-            "_step_count": int(self._step_count),
-            "_occ_invalid": self._maps.occ_invalid.clone(),
-            "_clear_invalid": self._maps.clear_invalid.clone(),
-            "_invalid": self._maps.invalid.clone(),
-            "_zone_invalid": self._maps.zone_invalid.clone(),
-        }
-
-    def set_snapshot(self, snapshot: Dict[str, object]) -> None:
-        """Restore a snapshot produced by `get_snapshot`."""
-        self.placements = dict(snapshot.get("placements", {}))  # type: ignore[arg-type]
-        self.placed = set(snapshot.get("placed", set()))  # type: ignore[arg-type]
-        self.remaining = list(snapshot.get("remaining", []))  # type: ignore[arg-type]
-        self._step_count = int(snapshot.get("_step_count", 0))
-
-        occ = snapshot.get("_occ_invalid", None)
-        clr = snapshot.get("_clear_invalid", None)
-        zinv = snapshot.get("_zone_invalid", None)
-        if isinstance(occ, torch.Tensor):
-            self._maps.occ_invalid.copy_(occ.to(device=self.device, dtype=torch.bool))
-        if isinstance(clr, torch.Tensor):
-            self._maps.clear_invalid.copy_(clr.to(device=self.device, dtype=torch.bool))
-        if isinstance(zinv, torch.Tensor):
-            self._maps.zone_invalid.copy_(zinv.to(device=self.device, dtype=torch.bool))
-        self._maps.recompute()
-
-    def step(self, action: int):
-        x, y, rot, i, j = self.decode_action(action)
-        obs, reward, terminated, truncated, info = self.step_place(x=x, y=y, rot=rot)
-        info.update({"cell_i": i, "cell_j": j})
-        return obs, reward, terminated, truncated, info
+    def step(self, action: EnvAction):
+        """Gym-compatible step proxy for engine-only usage."""
+        if not isinstance(action, EnvAction):
+            raise TypeError(f"FactoryLayoutEnv.step expects EnvAction, got {type(action).__name__}")
+        return self.step_action(action)
 
 
 if __name__ == "__main__":
     import time
-    from envs.visualizer import plot_flow_graph, plot_layout
+    from envs.env_visualizer import plot_flow_graph, plot_layout
 
     dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     dev = torch.device("cpu")
@@ -1059,18 +700,20 @@ if __name__ == "__main__":
 
     print("[env_demo]")
     print(f" device={dev}  init_ms={init_ms:.2f}  reset_ms={reset_ms:.2f}")
-    print(f" placed={sorted(env.placed)}  remaining={env.remaining}")
-    print(f" flow_port_pairs after reset: {env._flow_port_pairs}")
+    print(f" placed={sorted(env.get_state().placed)}  remaining={env.get_state().remaining}")
+    print(f" flow_port_pairs after reset: {env.get_state().flow_port_pairs}")
 
     # --- step: C 배치 (x>=60+clearance, weight_areas 이내) ---
     t2 = time.perf_counter()
-    obs2, reward, terminated, truncated, info = env.step_place(x=74.0, y=22.0, rot=0)
+    obs2, reward, terminated, truncated, info = env.step_action(
+        EnvAction(gid=None, x=74, y=22, rot=0)
+    )
     step_ms = (time.perf_counter() - t2) * 1000.0
 
     print(f" step_ms={step_ms:.2f}  reason={info['reason']}  reward={reward:.4f}  terminated={terminated}")
-    print(f" flow_port_pairs after step:  {env._flow_port_pairs}")
+    print(f" flow_port_pairs after step:  {env.get_state().flow_port_pairs}")
     print(f" cost={env.cost():.4f}")
     print(f" obs_keys={list(obs.keys())}")
 
-    plot_layout(env, candidate_set=None)
+    plot_layout(env, action_space=None)
     plot_flow_graph(env)

@@ -130,14 +130,14 @@ class DynamicStorageEnv(gym.Env):
         self.stride_y = self.cell_h + self.gap_h
         
         # z축 높이 맵 (천장 높이)
-        self._height_map = base_env._height_map  # [H, W] 천장 높이
+        self._height_map = base_env.get_maps().height_map  # [H, W] 천장 높이
         
         self.H = base_env.grid_height
         self.W = base_env.grid_width
         self.device = base_env.device
         
         # 유효 영역 (배치 가능)
-        self._valid = ~(base_env._occ_invalid | base_env._static_invalid)
+        self._valid = ~(base_env.get_maps().occ_invalid | base_env.get_maps().static_invalid)
         self._initial_valid = self._valid.clone()
         
         # 배치된 unit 영역 추적
@@ -444,8 +444,8 @@ class DynamicStorageEnv(gym.Env):
         cand_cx = xs + cw / 2.0
         cand_cy = ys + ch / 2.0
         
-        # base_env.placed는 set, positions는 dict
-        placed_nodes = list(self.base_env.placed)
+        # base_env.get_state().placed는 set, positions는 dict
+        placed_nodes = list(self.base_env.get_state().placed)
         if not placed_nodes:
             return torch.zeros(N, dtype=torch.float32, device=self.device)
         
@@ -454,13 +454,11 @@ class DynamicStorageEnv(gym.Env):
         w_in: List[float] = []
         
         for p in placed_nodes:
-            # positions dict에서 좌표 가져오기
-            placement = self.base_env.positions.get(p)
+            placement = self.base_env.get_state().placements.get(p)
             if placement is None:
                 continue
-            px, py = placement[0], placement[1]
-            g = self.base_env.groups[p]
-            p_rot = placement[2] if len(placement) > 2 else 0
+            px, py, p_rot = placement.pose()
+            g = self.base_env.group_specs[p]
             if p_rot in (90, 270):
                 pw, ph = g.height, g.width
             else:
@@ -712,12 +710,12 @@ class DynamicStorageEnv(gym.Env):
             bbox=bbox,
         )
     
-    # ========== Snapshot (MCTS 호환) ==========
-    
-    def get_snapshot(self) -> Dict[str, Any]:
+    # ========== State Copy (MCTS 호환) ==========
+
+    def get_state_copy(self) -> Dict[str, Any]:
         """현재 상태 저장."""
         return {
-            "base_snap": self.base_env.get_snapshot(),
+            "base_state": self.base_env.get_state().copy(),
             "_valid": self._valid.clone(),
             "_unit_used": self._unit_used.clone(),
             "_current_config_idx": self._current_config_idx,
@@ -728,19 +726,19 @@ class DynamicStorageEnv(gym.Env):
             "_placed_cells": self._placed_cells,
         }
     
-    def set_snapshot(self, snapshot: Dict[str, Any]) -> None:
+    def set_state(self, state: Dict[str, Any]) -> None:
         """상태 복원."""
-        if "base_snap" in snapshot:
-            self.base_env.set_snapshot(snapshot["base_snap"])
-        self._valid = snapshot["_valid"].clone()
-        self._unit_used = snapshot["_unit_used"].clone()
-        self._current_config_idx = snapshot["_current_config_idx"]
-        self._remaining_configs = list(snapshot["_remaining_configs"])
-        self.current_result = snapshot.get("current_result")
-        if "placeable_masks" in snapshot:
-            self._placeable_masks = {k: v.clone() for k, v in snapshot["placeable_masks"].items()}
-        self.placed_history = {k: list(v) for k, v in snapshot.get("placed_history", {}).items()}
-        self._placed_cells = snapshot.get("_placed_cells", 0)
+        if "base_state" in state:
+            self.base_env.set_state(state["base_state"])
+        self._valid = state["_valid"].clone()
+        self._unit_used = state["_unit_used"].clone()
+        self._current_config_idx = state["_current_config_idx"]
+        self._remaining_configs = list(state["_remaining_configs"])
+        self.current_result = state.get("current_result")
+        if "placeable_masks" in state:
+            self._placeable_masks = {k: v.clone() for k, v in state["placeable_masks"].items()}
+        self.placed_history = {k: list(v) for k, v in state.get("placed_history", {}).items()}
+        self._placed_cells = state.get("_placed_cells", 0)
         
         # config 업데이트 + 파생값 재계산
         if self._remaining_configs:

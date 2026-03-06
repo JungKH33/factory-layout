@@ -9,10 +9,11 @@ import torch.nn.functional as F
 
 from envs.env import FactoryLayoutEnv, GroupId
 
-from .base import BaseWrapper
+from .base import BaseDecisionAdapter
+from envs.action_space import ActionSpace
 
 
-class MaskPlaceWrapperEnv(BaseWrapper):
+class MaskPlaceDecisionAdapter(BaseDecisionAdapter):
     """MaskPlace dense-grid wrapper: Discrete(G*G) actions (default G=224).
 
     Obs provides:
@@ -26,14 +27,13 @@ class MaskPlaceWrapperEnv(BaseWrapper):
     def __init__(
         self,
         *,
-        engine: FactoryLayoutEnv,
         grid: int = 224,
         rot: int = 0,
         soft_coefficient: float = 1.0,
     ):
-        super().__init__(engine=engine)
-        self.grid_width = int(engine.grid_width)
-        self.grid_height = int(engine.grid_height)
+        super().__init__()
+        self.grid_width = 1
+        self.grid_height = 1
         self.grid = int(grid)
         self.rot = int(rot)
         self.soft_coefficient = float(soft_coefficient)
@@ -43,6 +43,12 @@ class MaskPlaceWrapperEnv(BaseWrapper):
 
         # cached last-built maps (for debugging/visualization)
         self._last_maps: Optional[torch.Tensor] = None  # float32 [5,G,G]
+        self.action_xyrot: Optional[torch.Tensor] = None  # long [G*G,3]
+
+    def bind(self, engine: FactoryLayoutEnv) -> None:
+        super().bind(engine)
+        self.grid_width = int(engine.grid_width)
+        self.grid_height = int(engine.grid_height)
 
     def cell_wh(self) -> Tuple[int, int]:
         g = int(self.grid)
@@ -51,44 +57,43 @@ class MaskPlaceWrapperEnv(BaseWrapper):
         return cell_w, cell_h
 
     def _next_gid(self) -> Optional[GroupId]:
-        return self.engine.remaining[0] if self.engine.remaining else None
+        return self.current_gid()
 
     def _gid_at(self, k: int) -> Optional[GroupId]:
         if k < 0:
             return None
-        if len(self.engine.remaining) <= k:
+        if len(self.engine.get_state().remaining) <= k:
             return None
-        return self.engine.remaining[k]
+        return self.engine.get_state().remaining[k]
 
-    def decode_action(self, action: int) -> Tuple[int, int, int, int, int]:
-        """Decode dense cell index to bottom-left integer coords (x_bl,y_bl,rot)."""
-        gid = self._next_gid()
-        if gid is None:
-            return 0, 0, 0, 0, 0
+    def _action_xyrot_for_gid(self, *, gid: Optional[GroupId]) -> torch.Tensor:
+        """Return long [G*G,3] table mapping action index -> (x_bl, y_bl, rot)."""
         g = int(self.grid)
-        a = int(action)
-        i = a // g
-        j = a % g
+        if gid is None:
+            return torch.zeros((g * g, 3), dtype=torch.long, device=self.device)
 
-        group = self.engine.groups[gid]
+        group = self.engine.group_specs[gid]
         rot = int(self.rot if group.rotatable else 0)
-        w, h = self.engine.rotated_size(group, rot)
+        w, h = group._rotated_size(int(rot))
         w_i = max(1, int(round(float(w))))
         h_i = max(1, int(round(float(h))))
 
         cell_w, cell_h = self.cell_wh()
-        cx = float(j * cell_w) + (cell_w / 2.0)
-        cy = float(i * cell_h) + (cell_h / 2.0)
-        x_bl = int(round(cx - (w_i / 2.0)))
-        y_bl = int(round(cy - (h_i / 2.0)))
-        return int(x_bl), int(y_bl), int(rot), int(i), int(j)
+        ii = torch.arange(g, device=self.device).view(-1, 1).expand(g, g)
+        jj = torch.arange(g, device=self.device).view(1, -1).expand(g, g)
+        cx = (jj * cell_w).to(torch.float32) + (cell_w / 2.0)
+        cy = (ii * cell_h).to(torch.float32) + (cell_h / 2.0)
+        x_bl = torch.round(cx - (w_i / 2.0)).to(torch.long)
+        y_bl = torch.round(cy - (h_i / 2.0)).to(torch.long)
+        rot_map = torch.full((g, g), int(rot), dtype=torch.long, device=self.device)
+        return torch.stack([x_bl, y_bl, rot_map], dim=-1).view(g * g, 3)
 
     def _create_mask_for_gid(self, *, gid: Optional[GroupId]) -> torch.Tensor:
         """Return torch.BoolTensor[G*G] valid-action mask for a specific gid."""
         if gid is None:
             return torch.zeros((self.grid * self.grid,), dtype=torch.bool, device=self.device)
 
-        group = self.engine.groups[gid]
+        group = self.engine.group_specs[gid]
         rot = int(self.rot if group.rotatable else 0)
         body_ok = self._valid_top_left_body(gid=gid, rot=rot)  # bool[H2,W2]
         pad_ok, cL, cB = self._valid_top_left_pad(gid=gid, rot=rot)  # bool[H3,W3]
@@ -102,7 +107,7 @@ class MaskPlaceWrapperEnv(BaseWrapper):
         cx = (jj * cell_w).to(torch.float32) + (cell_w / 2.0)
         cy = (ii * cell_h).to(torch.float32) + (cell_h / 2.0)
 
-        w, h = self.engine.rotated_size(group, rot)
+        w, h = group._rotated_size(int(rot))
         w_i = max(1, int(round(float(w))))
         h_i = max(1, int(round(float(h))))
         x_bl = torch.round(cx - (w_i / 2.0)).to(torch.long)
@@ -132,9 +137,9 @@ class MaskPlaceWrapperEnv(BaseWrapper):
         if gid is None:
             return torch.zeros((g, g), dtype=torch.float32, device=self.device)
 
-        group = self.engine.groups[gid]
+        group = self.engine.group_specs[gid]
         rot = int(self.rot if group.rotatable else 0)
-        w, h = self.engine.rotated_size(group, rot)
+        w, h = group._rotated_size(int(rot))
         w_i = max(1, int(round(float(w))))
         h_i = max(1, int(round(float(h))))
 
@@ -154,13 +159,13 @@ class MaskPlaceWrapperEnv(BaseWrapper):
         return scores.view(g, g)
 
     def _valid_top_left_body(self, *, gid: GroupId, rot: int) -> torch.Tensor:
-        group = self.engine.groups[gid]
-        w, h = self.engine.rotated_size(group, rot)
+        group = self.engine.group_specs[gid]
+        w, h = group._rotated_size(int(rot))
         kw = max(1, int(round(float(w))))
         kh = max(1, int(round(float(h))))
 
-        inv = self.engine._invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
-        clr = self.engine._clear_invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
+        inv = self.engine.get_maps().invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
+        clr = self.engine.get_maps().clear_invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
         kernel = torch.ones((1, 1, kh, kw), device=self.device, dtype=inv.dtype)
 
         ov_inv = F.conv2d(inv, kernel, padding=0).squeeze(0).squeeze(0)
@@ -168,23 +173,25 @@ class MaskPlaceWrapperEnv(BaseWrapper):
         return (ov_inv == 0) & (ov_clr == 0)
 
     def _valid_top_left_pad(self, *, gid: GroupId, rot: int) -> Tuple[torch.Tensor, int, int]:
-        group = self.engine.groups[gid]
-        w, h = self.engine.rotated_size(group, rot)
+        group = self.engine.group_specs[gid]
+        w, h = group._rotated_size(int(rot))
         w_i = max(1, int(round(float(w))))
         h_i = max(1, int(round(float(h))))
 
-        cL, cR, cB, cT = self.engine._clearance_lrtb(group, rot)
+        cL, cR, cB, cT = group._clearance_lrtb(int(rot))
         cL_i, cR_i, cB_i, cT_i = int(cL), int(cR), int(cB), int(cT)
         kw = max(1, w_i + cL_i + cR_i)
         kh = max(1, h_i + cB_i + cT_i)
 
-        inv = self.engine._invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
+        inv = self.engine.get_maps().invalid.to(dtype=torch.float32).view(1, 1, self.grid_height, self.grid_width)
         kernel = torch.ones((1, 1, kh, kw), device=self.device, dtype=inv.dtype)
         ov = F.conv2d(inv, kernel, padding=0).squeeze(0).squeeze(0)
         return (ov == 0), int(cL_i), int(cB_i)
 
     def create_mask(self) -> torch.Tensor:
-        return self._create_mask_for_gid(gid=self._next_gid())
+        gid = self._next_gid()
+        self.action_xyrot = self._action_xyrot_for_gid(gid=gid)
+        return self._create_mask_for_gid(gid=gid)
 
     def _build_maps_and_state(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return (maps[5,G,G], state[1+5*G*G+2])."""
@@ -205,9 +212,9 @@ class MaskPlaceWrapperEnv(BaseWrapper):
         # - 0.0: free
         #
         # Use area downsampling to preserve "partial coverage" information.
-        occ_or_static = (self.engine._occ_invalid | self.engine._static_invalid)
+        occ_or_static = (self.engine.get_maps().occ_invalid | self.engine.get_maps().static_invalid)
         canvas_full = torch.zeros((self.grid_height, self.grid_width), dtype=torch.float32, device=self.device)
-        canvas_full[self.engine._clear_invalid] = 0.5
+        canvas_full[self.engine.get_maps().clear_invalid] = 0.5
         canvas_full[occ_or_static] = 1.0
         canvas_src = canvas_full.view(1, 1, self.grid_height, self.grid_width)
         canvas = F.interpolate(canvas_src, size=(g, g), mode="area").squeeze(0).squeeze(0)
@@ -241,46 +248,72 @@ class MaskPlaceWrapperEnv(BaseWrapper):
 
         # state = [pos_idx] + [5 maps flat] + [extra2]
         pos_idx = float(self.engine.gid_to_idx.get(gid, 0)) if gid is not None else 0.0
-        extra2 = self.engine._build_obs().get("next_group_wh", torch.zeros((2,), device=self.device, dtype=torch.float32))
+        if gid2 is None:
+            extra2 = torch.zeros((2,), device=self.device, dtype=torch.float32)
+        else:
+            spec2 = self.engine.group_specs[gid2]
+            extra2 = torch.tensor(
+                [
+                    float(spec2.width) / float(self.grid_width),
+                    float(spec2.height) / float(self.grid_height),
+                ],
+                dtype=torch.float32,
+                device=self.device,
+            )
         state = torch.empty((1 + 5 * g2 + 2,), dtype=torch.float32, device=self.device)
         state[0] = float(pos_idx)
         state[1 : 1 + 5 * g2] = maps.reshape(-1)
         state[1 + 5 * g2 :] = extra2.to(dtype=torch.float32).view(-1)[:2]
         return maps, state
 
-    def _build_obs(self) -> Dict[str, Any]:
-        assert self.mask is not None
-        obs = dict(self.engine._build_obs())
-        obs["action_mask"] = self.mask
+    def build_observation(self) -> Dict[str, Any]:
+        return dict(self.engine.build_observation())
+
+    def build_action_space(self) -> ActionSpace:
+        candidates = super().build_action_space()
+
         maps, state = self._build_maps_and_state()
         self._last_maps = maps
-        # Expose maps directly in obs for training/debugging (no copies; tensor views).
-        # maps: [5, G, G] = [canvas, net_img, invalid, net_img_2, invalid_2]
-        obs["canvas"] = maps[0]
-        obs["net_img"] = maps[1]
-        obs["invalid_map"] = maps[2]
-        obs["net_img_2"] = maps[3]
-        obs["invalid_2_map"] = maps[4]
-        obs["state"] = state
-        return obs
+        meta = dict(candidates.meta or {})
+        # Keep maskplace-specific tensors with candidates (not observation).
+        meta["state"] = state
+        meta["canvas"] = maps[0]
+        meta["net_img"] = maps[1]
+        meta["invalid_map"] = maps[2]
+        meta["net_img_2"] = maps[3]
+        meta["invalid_2_map"] = maps[4]
 
-    def step(self, action: int):
-        assert self.mask is not None
-        x_bl, y_bl, rot, i, j = self.decode_action(int(action))
-        obs_core, reward, terminated, truncated, info = self.engine.step_masked(
-            action=int(action),
-            x=float(x_bl),
-            y=float(y_bl),
-            rot=int(rot),
-            mask=self.mask,
-            action_space_n=int(self.action_space.n),
-            extra_info={"cell_i": int(i), "cell_j": int(j)},
+        return ActionSpace(
+            xyrot=candidates.xyrot,
+            mask=candidates.mask,
+            gid=candidates.gid,
+            meta=meta,
         )
-        # Always return a stable wrapper observation dict for training/search compatibility.
-        # (Some consumers, e.g. Tianshou buffers, require stable keys/shapes across timesteps.)
-        self.mask = self.create_mask()
-        return self._build_obs(), reward, terminated, truncated, info
 
+    def get_state_copy(self) -> Dict[str, object]:
+        snap = dict(super().get_state_copy())
+        if isinstance(self.action_xyrot, torch.Tensor):
+            snap["action_xyrot"] = self.action_xyrot.clone()
+        else:
+            snap["action_xyrot"] = None
+        if isinstance(self._last_maps, torch.Tensor):
+            snap["_last_maps"] = self._last_maps.clone()
+        else:
+            snap["_last_maps"] = None
+        return snap
+
+    def set_state(self, state: Dict[str, object]) -> None:
+        super().set_state(state)
+        ax = state.get("action_xyrot", None)
+        if isinstance(ax, torch.Tensor):
+            self.action_xyrot = ax.to(device=self.device, dtype=torch.long).clone()
+        else:
+            self.action_xyrot = None
+        lm = state.get("_last_maps", None)
+        if isinstance(lm, torch.Tensor):
+            self._last_maps = lm.to(device=self.device, dtype=torch.float32).clone()
+        else:
+            self._last_maps = None
 
 if __name__ == "__main__":
     import time
@@ -288,74 +321,69 @@ if __name__ == "__main__":
     import torch
     import matplotlib.pyplot as plt
 
-    from envs.wrappers.candidate_set import CandidateSet
-    from envs.json_loader import load_env
-    from envs.visualizer import plot_layout
+    from envs.action_space import ActionSpace as CandidateSet
+    from envs.action import EnvAction
+    from envs.env_loader import load_env
+    from envs.env_visualizer import plot_layout
 
-    ENV_JSON = "env_configs/placed_01.json"
+    ENV_JSON = "envs/env_configs/placed_01.json"
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
 
-    env = MaskPlaceWrapperEnv(engine=engine, grid=224, rot=0)
+    adapter = MaskPlaceDecisionAdapter(grid=224, rot=0)
 
     t0 = time.perf_counter()
-    obs, _info = env.reset(options=loaded.reset_kwargs)
+    _obs_env, _info = engine.reset(options=loaded.reset_kwargs)
+    adapter.bind(engine)
+    obs = adapter.build_observation()
+    candidates = adapter.build_action_space()
     dt_reset_ms = (time.perf_counter() - t0) * 1000.0
 
-    valid = int(obs["action_mask"].sum().item())
-    a = int(torch.where(obs["action_mask"])[0][0].item()) if valid > 0 else 0
+    valid = int(candidates.mask.sum().item())
+    a = int(torch.where(candidates.mask)[0][0].item()) if valid > 0 else 0
 
     # For visualization, subsample valid points (224^2 can be large).
-    gid = env.engine.remaining[0] if env.engine.remaining else None
-    idxs = torch.where(obs["action_mask"])[0][:5000]
-    xy = torch.zeros((int(idxs.numel()), 3), dtype=torch.long, device=device)
-    for t, ai in enumerate(idxs.tolist()):
-        x_bl, y_bl, rot, _i, _j = env.decode_action(int(ai))
-        xy[t, 0] = int(x_bl)
-        xy[t, 1] = int(y_bl)
-        xy[t, 2] = int(rot)
+    idxs = torch.where(candidates.mask)[0][:5000]
+    xy = candidates.xyrot[idxs]
     cand0 = CandidateSet(
         xyrot=xy,
         mask=torch.ones((xy.shape[0],), dtype=torch.bool, device=device),
-        gid=gid,
-        meta={"grid": int(env.grid)},
+        gid=candidates.gid,
+        meta={"grid": int(adapter.grid)},
     )
-    plot_layout(env, candidate_set=cand0)
+    plot_layout(engine, action_space=cand0)
 
     t1 = time.perf_counter()
-    obs2, _r, _term, _trunc, _info2 = env.step(a)
+    placement = adapter.decode_action(a, candidates)
+    _obs_env2, _r, _term, _trunc, _info2 = engine.step_action(placement)
+    obs2 = adapter.build_observation()
+    candidates2 = adapter.build_action_space()
     dt_step_ms = (time.perf_counter() - t1) * 1000.0
 
     # Plot after one placement (subsample new valid points)
-    if isinstance(obs2, dict) and ("action_mask" in obs2):
-        gid2 = env.engine.remaining[0] if env.engine.remaining else None
-        idxs2 = torch.where(obs2["action_mask"])[0][:5000]
-        xy2 = torch.zeros((int(idxs2.numel()), 3), dtype=torch.long, device=device)
-        for t, ai in enumerate(idxs2.tolist()):
-            x_bl, y_bl, rot, _i, _j = env.decode_action(int(ai))
-            xy2[t, 0] = int(x_bl)
-            xy2[t, 1] = int(y_bl)
-            xy2[t, 2] = int(rot)
+    if int(candidates2.mask.shape[0]) > 0:
+        idxs2 = torch.where(candidates2.mask)[0][:5000]
+        xy2 = candidates2.xyrot[idxs2]
         cand1 = CandidateSet(
             xyrot=xy2,
             mask=torch.ones((xy2.shape[0],), dtype=torch.bool, device=device),
-            gid=gid2,
-            meta={"grid": int(env.grid)},
+            gid=candidates2.gid,
+            meta={"grid": int(adapter.grid)},
         )
-        plot_layout(env, candidate_set=cand1)
+        plot_layout(engine, action_space=cand1)
     else:
-        plot_layout(env, candidate_set=None)
+        plot_layout(engine, action_space=None)
 
-    print("[MaskPlaceWrapperEnv demo]")
-    print(" env=", ENV_JSON, "device=", device, "grid=", env.grid)
+    print("[MaskPlaceDecisionAdapter demo]")
+    print(" env=", ENV_JSON, "device=", device, "grid=", adapter.grid)
     print(" valid_actions=", valid, "first_valid_action=", a, "plotted=", int(xy.shape[0]))
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")
 
     # Show maps: canvas(map0), net_img(map1), invalid(mask=map2), net_img_2(map3), mask_2(map4) (close to continue)
-    if isinstance(env._last_maps, torch.Tensor) and env._last_maps.numel() > 0:
-        maps = env._last_maps.detach().to(device="cpu", dtype=torch.float32).numpy()  # [5,G,G]
+    if isinstance(adapter._last_maps, torch.Tensor) and adapter._last_maps.numel() > 0:
+        maps = adapter._last_maps.detach().to(device="cpu", dtype=torch.float32).numpy()  # [5,G,G]
         canvas = maps[0]
         net_img = maps[1]
         invalid = maps[2]
@@ -388,4 +416,3 @@ if __name__ == "__main__":
 
         plt.tight_layout()
         plt.show()
-

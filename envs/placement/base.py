@@ -26,3 +26,7 @@ class PlacementBase:
     clearance_right: int
     clearance_bottom: int
     clearance_top: int
+
+    def pose(self) -> Tuple[int, int, int]:
+        """Return bottom-left pose tuple (x_bl, y_bl, rot)."""
+        return int(self.x_bl), int(self.y_bl), int(self.rot)

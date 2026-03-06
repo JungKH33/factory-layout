@@ -7,8 +7,10 @@ from typing import Dict, Optional, List
 import numpy as np
 import torch
 
-from envs.wrappers.base import BaseWrapper
-from envs.wrappers.candidate_set import CandidateSet
+from envs.env import FactoryLayoutEnv
+from envs.state import EnvState
+from decision_adapters.base import BaseDecisionAdapter
+from envs.action_space import ActionSpace as CandidateSet
 from agents.base import Agent
 from search.base import BaseSearch, SearchProgress, SearchResult, TopKTracker
 
@@ -44,18 +46,16 @@ class _Node:
     def __init__(
         self,
         *,
-        snapshot: Dict[str, object],
-        candidates: CandidateSet,
+        engine_state: EnvState,
+        action_space: CandidateSet,
         priors: torch.Tensor,  # float32 [N]
-        parent: Optional["_Node"] = None,
         action: Optional[int] = None,
         reward: float = 0.0,
         terminal: bool = False,
     ):
-        self.snapshot = snapshot
-        self.candidates = candidates
+        self.engine_state = engine_state
+        self.action_space = action_space
         self.priors = priors
-        self.parent = parent
         self.action = action
         self.reward = float(reward)
         self.terminal = bool(terminal)
@@ -64,7 +64,7 @@ class _Node:
         self.total_value = 0.0
         self.children: Dict[int, "_Node"] = {}
 
-        valid = candidates.mask
+        valid = action_space.mask
         self.valid_actions = [i for i in range(int(valid.shape[0])) if bool(valid[i].item())]
 
     def _allowed_children(self, cfg: MCTSConfig) -> int:
@@ -132,7 +132,7 @@ class _Node:
 
 
 class MCTSSearch(BaseSearch):
-    """MCTS over wrapper env (Discrete + action_mask + snapshot) using Agent priors."""
+    """MCTS over decision adapter (Discrete + action_mask + env state)."""
 
     def __init__(self, *, config: MCTSConfig):
         super().__init__()
@@ -148,20 +148,24 @@ class MCTSSearch(BaseSearch):
     def select(
         self,
         *,
-        env: BaseWrapper,
         obs: dict,
         agent: Agent,
-        root_candidates: CandidateSet,
+        root_action_space: CandidateSet,
     ) -> int:
-        root_snapshot = env.get_snapshot()
+        adapter = self.adapter
+        if adapter is None:
+            raise ValueError("MCTSSearch.adapter is not set. Call search.set_adapter(...).")
+        engine = getattr(adapter, "engine", None)
+        if engine is None:
+            raise ValueError("MCTSSearch requires adapter.engine. Bind adapter to env before search.")
+        root_state = self._get_engine_state(engine=engine, adapter=adapter)
 
-        priors = self._safe_priors(agent=agent, env=env, obs=obs, candidates=root_candidates)
-        priors = self._apply_root_dirichlet(priors=priors, mask=root_candidates.mask)
+        priors = self._safe_priors(agent=agent, adapter=adapter, obs=obs, action_space=root_action_space)
+        priors = self._apply_root_dirichlet(priors=priors, mask=root_action_space.mask)
         root = _Node(
-            snapshot=root_snapshot,
-            candidates=root_candidates,
+            engine_state=root_state,
+            action_space=root_action_space,
             priors=priors,
-            parent=None,
             action=None,
             reward=0.0,
             terminal=False,
@@ -170,12 +174,12 @@ class MCTSSearch(BaseSearch):
         # Only compute numpy arrays if callback is set (avoid overhead when not needed)
         has_callback = self._progress_callback is not None
         if has_callback:
-            n_actions = int(root_candidates.mask.shape[0])
-            mask_np = root_candidates.mask.detach().cpu().numpy().astype(bool)
+            n_actions = int(root_action_space.mask.shape[0])
+            mask_np = root_action_space.mask.detach().cpu().numpy().astype(bool)
 
         num_sims = int(self.config.num_simulations)
         for sim in range(num_sims):
-            self._simulate(env=env, root=root, agent=agent)
+            self._simulate(engine=engine, adapter=adapter, root=root, agent=agent)
             
             # Emit progress at intervals (only if callback is set)
             if has_callback:
@@ -183,7 +187,7 @@ class MCTSSearch(BaseSearch):
                     self._emit_mcts_progress(root, sim + 1, num_sims, n_actions, mask_np)
 
         if not root.children:
-            env.set_snapshot(root_snapshot)
+            self._set_engine_state(engine=engine, adapter=adapter, engine_state=root_state)
             return 0
 
         best_action: int
@@ -194,7 +198,7 @@ class MCTSSearch(BaseSearch):
         else:
             # Stochastic: sample proportionally to visit counts with temperature.
             acts = list(root.children.keys())
-            visits = torch.tensor([float(root.children[a].visits) for a in acts], dtype=torch.float32, device=env.device)
+            visits = torch.tensor([float(root.children[a].visits) for a in acts], dtype=torch.float32, device=adapter.device)
             if float(visits.sum().item()) <= 0.0:
                 best_action = int(acts[0])
             else:
@@ -206,7 +210,7 @@ class MCTSSearch(BaseSearch):
                     p = w / s
                     idx = int(torch.multinomial(p, num_samples=1).item())
                     best_action = int(acts[idx])
-        env.set_snapshot(root_snapshot)
+        self._set_engine_state(engine=engine, adapter=adapter, engine_state=root_state)
         return int(best_action)
 
     def _emit_mcts_progress(
@@ -242,17 +246,65 @@ class MCTSSearch(BaseSearch):
         )
         self._emit_progress(progress)
 
-    def _track_terminal(self, env: BaseWrapper, cum_reward: float) -> None:
+    def _get_engine_state(self, *, engine: FactoryLayoutEnv, adapter: BaseDecisionAdapter) -> EnvState:
+        """Snapshot current engine state.
+
+        The base implementation only copies the engine state.  Adapter state
+        (mask, action_xyrot, etc.) is intentionally NOT included – it is
+        always rebuilt via ``adapter.build_action_space()`` after restoration.
+        Subclasses may override to include adapter state if needed.
+        """
+        return engine.get_state().copy()
+
+    def _set_engine_state(
+        self,
+        *,
+        engine: FactoryLayoutEnv,
+        adapter: BaseDecisionAdapter,
+        engine_state: EnvState,
+    ) -> None:
+        """Restore engine to a previously captured state.
+
+        Only the engine state is restored.  Adapter state is NOT restored
+        here – callers must call ``adapter.build_action_space()`` afterwards
+        if they need a consistent adapter.  Subclasses may override to
+        include adapter restoration.
+        """
+        engine.set_state(engine_state)
+
+    def _apply_action_index(
+        self,
+        *,
+        engine: FactoryLayoutEnv,
+        adapter: BaseDecisionAdapter,
+        action: int,
+        action_space: CandidateSet,
+    ):
+        """Apply discrete action index via decode -> engine.step_action."""
+        try:
+            placement = adapter.decode_action(int(action), action_space)
+        except IndexError:
+            obs_out = adapter.build_observation()
+            return obs_out, float(engine.failure_penalty()), False, True, {"reason": "action_out_of_range"}
+        except ValueError as e:
+            obs_out = adapter.build_observation()
+            reason = "no_valid_actions" if str(e) == "no_valid_actions" else "masked_action"
+            return obs_out, float(engine.failure_penalty()), False, True, {"reason": reason}
+        _obs_env, reward, terminated, truncated, info = engine.step_action(placement)
+        obs2 = adapter.build_observation()
+        return obs2, float(reward), bool(terminated), bool(truncated), info
+
+    def _track_terminal(self, *, engine: FactoryLayoutEnv, adapter: BaseDecisionAdapter, cum_reward: float) -> None:
         """Track terminal state if tracking is enabled."""
         if self.top_tracker is None:
             return
-        cost = env.engine.total_cost()
-        positions = {str(gid): pos for gid, pos in env.engine.positions.items()}
+        cost = engine.total_cost()
+        positions = {str(gid): p.pose() for gid, p in engine.get_state().placements.items()}
         self.top_tracker.add(SearchResult(
             cost=cost,
             cum_reward=cum_reward,
             positions=positions,
-            snapshot=env.get_snapshot(),
+            engine_state=self._get_engine_state(engine=engine, adapter=adapter),
         ))
 
     def _apply_root_dirichlet(self, *, priors: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -281,34 +333,48 @@ class MCTSSearch(BaseSearch):
         mixed[valid] = mixed_valid
         return mixed
 
-    def _safe_priors(self, *, agent: Agent, env: BaseWrapper, obs: dict, candidates: CandidateSet) -> torch.Tensor:
-        pri = agent.policy(env=env.engine, obs=obs, candidates=candidates)
+    def _safe_priors(
+        self,
+        *,
+        agent: Agent,
+        adapter: BaseDecisionAdapter,
+        obs: dict,
+        action_space: CandidateSet,
+    ) -> torch.Tensor:
+        pri = agent.policy(obs=obs, action_space=action_space)
         if not isinstance(pri, torch.Tensor):
             raise TypeError("Agent.policy must return torch.Tensor")
-        pri = pri.to(dtype=torch.float32, device=env.device).view(-1)
-        if int(pri.shape[0]) != int(candidates.mask.shape[0]):
-            out = torch.zeros((int(candidates.mask.shape[0]),), dtype=torch.float32, device=env.device)
-            valid = candidates.mask
+        pri = pri.to(dtype=torch.float32, device=adapter.device).view(-1)
+        if int(pri.shape[0]) != int(action_space.mask.shape[0]):
+            out = torch.zeros((int(action_space.mask.shape[0]),), dtype=torch.float32, device=adapter.device)
+            valid = action_space.mask
             cnt = int(valid.to(torch.int64).sum().item())
             if cnt > 0:
                 out[valid] = 1.0 / float(cnt)
             return out
         pri = torch.clamp(pri, min=0.0)
-        pri = pri.masked_fill(~candidates.mask, 0.0)
+        pri = pri.masked_fill(~action_space.mask, 0.0)
         s = float(pri.sum().item())
         if s > 0:
             pri = pri / s
         else:
-            valid = candidates.mask
+            valid = action_space.mask
             cnt = int(valid.to(torch.int64).sum().item())
             if cnt > 0:
                 pri = torch.zeros_like(pri)
                 pri[valid] = 1.0 / float(cnt)
         return pri
 
-    def _simulate(self, *, env: BaseWrapper, root: _Node, agent: Agent) -> None:
+    def _simulate(
+        self,
+        *,
+        engine: FactoryLayoutEnv,
+        adapter: BaseDecisionAdapter,
+        root: _Node,
+        agent: Agent,
+    ) -> None:
         node = root
-        env.set_snapshot(root.snapshot)
+        self._set_engine_state(engine=engine, adapter=adapter, engine_state=root.engine_state)
 
         path_nodes = [root]
         path_rewards: List[float] = []
@@ -330,34 +396,44 @@ class MCTSSearch(BaseSearch):
 
             if action in node.children:
                 node = node.children[action]
-                env.set_snapshot(node.snapshot)
+                self._set_engine_state(engine=engine, adapter=adapter, engine_state=node.engine_state)
                 path_nodes.append(node)
                 path_rewards.append(node.reward)
             else:
-                env.set_snapshot(node.snapshot)
-                cand = node.candidates
-                obs2, reward, terminated, truncated, _info = env.step(int(action))
+                # Engine is already at node.engine_state (set on loop entry
+                # or by the previous if-branch), so no _set_engine_state needed.
+                cand = node.action_space
+                obs2, reward, terminated, truncated, _info = self._apply_action_index(
+                    engine=engine,
+                    adapter=adapter,
+                    action=int(action),
+                    action_space=cand,
+                )
                 terminal = bool(terminated or truncated)
 
                 if terminal:
-                    next_candidates = CandidateSet(
-                        xyrot=torch.zeros((0, 3), dtype=torch.long, device=env.device),
-                        mask=torch.zeros((0,), dtype=torch.bool, device=env.device),
+                    next_action_space = CandidateSet(
+                        xyrot=torch.zeros((0, 3), dtype=torch.long, device=adapter.device),
+                        mask=torch.zeros((0,), dtype=torch.bool, device=adapter.device),
                         meta={"terminal": True},
                     )
-                    priors = torch.zeros((0,), dtype=torch.float32, device=env.device)
+                    priors = torch.zeros((0,), dtype=torch.float32, device=adapter.device)
                 else:
-                    next_candidates = self._candidates_from_obs(env, obs2)
-                    priors = self._safe_priors(agent=agent, env=env, obs=obs2, candidates=next_candidates)
+                    next_action_space = adapter.build_action_space()
+                    priors = self._safe_priors(
+                        agent=agent,
+                        adapter=adapter,
+                        obs=obs2,
+                        action_space=next_action_space,
+                    )
 
                 child = _Node(
-                    snapshot=env.get_snapshot(),
-                    candidates=next_candidates,
+                    engine_state=self._get_engine_state(engine=engine, adapter=adapter),
+                    action_space=next_action_space,
                     priors=priors,
-                    parent=node,
                     action=int(action),
                     reward=float(reward),
-                    terminal=terminal or (not terminal and int(next_candidates.mask.to(torch.int64).sum().item()) == 0),
+                    terminal=terminal or (not terminal and int(next_action_space.mask.to(torch.int64).sum().item()) == 0),
                 )
                 node.children[int(action)] = child
                 node = child
@@ -367,19 +443,22 @@ class MCTSSearch(BaseSearch):
                 # Track terminal state (expansion 시점)
                 if child.terminal:
                     cum_reward = sum(path_rewards)
-                    self._track_terminal(env, cum_reward)
+                    self._track_terminal(engine=engine, adapter=adapter, cum_reward=cum_reward)
                 break
 
         leaf_value = 0.0
         if not node.terminal:
             if not bool(self.config.rollout_enabled):
                 # Leaf evaluation via value head.
-                env.set_snapshot(node.snapshot)
-                obs_leaf = env._build_obs()  # type: ignore[attr-defined]
-                cand_leaf = self._candidates_from_obs(env, obs_leaf)
-                leaf_value = float(agent.value(env=env.engine, obs=obs_leaf, candidates=cand_leaf))
+                self._set_engine_state(engine=engine, adapter=adapter, engine_state=node.engine_state)
+                obs_leaf = adapter.build_observation()
+                leaf_action_space = adapter.build_action_space()
+                leaf_value = float(agent.value(obs=obs_leaf, action_space=leaf_action_space))
             else:
-                leaf_value = self._rollout(env=env, agent=agent)
+                leaf_value = self._rollout(
+                    engine=engine, adapter=adapter, agent=agent,
+                    path_reward_offset=float(sum(path_rewards)),
+                )
 
         total = float(leaf_value)
         for reward, path_node in zip(reversed(path_rewards), reversed(path_nodes[1:])):
@@ -390,48 +469,43 @@ class MCTSSearch(BaseSearch):
         root.visits += 1
         root.total_value += float(total)
 
-    def _candidates_from_obs(self, env: BaseWrapper, obs: dict) -> CandidateSet:
-        mask = obs.get("action_mask", None)
-        if not isinstance(mask, torch.Tensor):
-            raise ValueError("MCTSSearch(wrapper) requires obs['action_mask'] (torch.Tensor)")
-        mask = mask.to(dtype=torch.bool, device=env.device).view(-1)
-        A = int(mask.shape[0])
-
-        gid = env.engine.remaining[0] if env.engine.remaining else None
-        if "action_xyrot" in obs and isinstance(obs["action_xyrot"], torch.Tensor):
-            xyrot = obs["action_xyrot"].to(dtype=torch.long, device=env.device)
-            if xyrot.ndim != 2 or int(xyrot.shape[0]) != A or int(xyrot.shape[1]) != 3:
-                raise ValueError(f"obs['action_xyrot'] must have shape [A,3], got {tuple(xyrot.shape)} for A={A}")
-            return CandidateSet(xyrot=xyrot, mask=mask, gid=gid)
-
-        xyrot = torch.zeros((A, 3), dtype=torch.long, device=env.device)
-        for a in range(A):
-            x_bl, y_bl, rot, _i, _j = env.decode_action(int(a))  # type: ignore[attr-defined]
-            xyrot[a, 0] = int(x_bl)
-            xyrot[a, 1] = int(y_bl)
-            xyrot[a, 2] = int(rot)
-        return CandidateSet(xyrot=xyrot, mask=mask, gid=gid)
-
-    def _rollout(self, *, env: BaseWrapper, agent: Agent) -> float:
+    def _rollout(
+        self,
+        *,
+        engine: FactoryLayoutEnv,
+        adapter: BaseDecisionAdapter,
+        agent: Agent,
+        path_reward_offset: float = 0.0,
+    ) -> float:
         total = 0.0
         if not bool(self.config.rollout_enabled):
             return 0.0
         for _ in range(int(self.config.rollout_depth)):
-            obs = env._build_obs()  # type: ignore[attr-defined]
-            candidates = self._candidates_from_obs(env, obs)
-            if int(candidates.mask.to(torch.int64).sum().item()) == 0:
-                _obs2, reward, terminated, truncated, _ = env.step(int(0))
+            obs = adapter.build_observation()
+            action_space = adapter.build_action_space()
+            if int(action_space.mask.to(torch.int64).sum().item()) == 0:
+                _obs2, reward, terminated, truncated, _ = self._apply_action_index(
+                    engine=engine,
+                    adapter=adapter,
+                    action=0,
+                    action_space=action_space,
+                )
                 total += float(reward)
-                # Track terminal during rollout
-                self._track_terminal(env, total)
+                # Track terminal during rollout (include tree path rewards)
+                self._track_terminal(engine=engine, adapter=adapter, cum_reward=path_reward_offset + total)
                 break
 
-            a = agent.select_action(env=env.engine, obs=obs, candidates=candidates)
-            _obs2, reward, terminated, truncated, _ = env.step(int(a))
+            a = agent.select_action(obs=obs, action_space=action_space)
+            _obs2, reward, terminated, truncated, _ = self._apply_action_index(
+                engine=engine,
+                adapter=adapter,
+                action=int(a),
+                action_space=action_space,
+            )
             total += float(reward)
             if terminated or truncated:
-                # Track terminal during rollout
-                self._track_terminal(env, total)
+                # Track terminal during rollout (include tree path rewards)
+                self._track_terminal(engine=engine, adapter=adapter, cum_reward=path_reward_offset + total)
                 break
         return float(total)
 
@@ -439,39 +513,36 @@ class MCTSSearch(BaseSearch):
 if __name__ == "__main__":
     import time
 
-    from envs.json_loader import load_env
+    from envs.env_loader import load_env
     from agents.greedy import GreedyAgent
-    from envs.wrappers.greedy import GreedyWrapperEnv
+    from decision_adapters.greedy import GreedyDecisionAdapter
 
-    ENV_JSON = "env_configs/basic_01.json"
+    ENV_JSON = "envs/env_configs/basic_01.json"
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
 
-    wenv = GreedyWrapperEnv(engine=engine, k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
-    obs, _info = wenv.reset(options=loaded.reset_kwargs)
+    adapter = GreedyDecisionAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    obs_env, _info = engine.reset(options=loaded.reset_kwargs)
+    adapter.bind(engine)
+    obs = adapter.build_observation()
 
     agent = GreedyAgent(prior_temperature=1.0)
     search = MCTSSearch(config=MCTSConfig(num_simulations=50, rollout_enabled=True, rollout_depth=5, dirichlet_epsilon=0.0))
+    search.set_adapter(adapter)
 
     t0 = time.perf_counter()
-    next_gid = wenv.engine.remaining[0] if wenv.engine.remaining else None
-    root_candidates = CandidateSet(xyrot=obs["action_xyrot"], mask=obs["action_mask"], gid=next_gid)
-    a = search.select(
-        env=wenv,
-        obs=obs,
-        agent=agent,
-        root_candidates=root_candidates,
-    )
+    root_action_space = adapter.build_action_space()
+    next_gid = root_action_space.gid
+    a = search.select(obs=obs, agent=agent, root_action_space=root_action_space)
     dt_ms = (time.perf_counter() - t0) * 1000.0
 
-    valid_n = int(root_candidates.mask.sum().item())
-    xyrot = root_candidates.xyrot[a].tolist() if int(root_candidates.xyrot.shape[0]) > 0 else [0, 0, 0]
+    valid_n = int(root_action_space.mask.sum().item())
+    xyrot = root_action_space.xyrot[a].tolist() if int(root_action_space.xyrot.shape[0]) > 0 else [0, 0, 0]
 
     print("[search.mcts demo]")
     print(" env=", ENV_JSON, "device=", device, "next_gid=", next_gid)
-    print(" action=", a, "valid_candidates=", valid_n, "xyrot=", xyrot)
+    print(" action=", a, "valid_actions=", valid_n, "xyrot=", xyrot)
     print(f" elapsed_ms={dt_ms:.2f}")
-

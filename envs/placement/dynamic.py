@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import torch
 import torch.nn.functional as F
 
-from .reward import FlowReward
+from ..reward import FlowReward
 
 GridXY = Tuple[int, int]
 StrideBBox = Tuple[int, int, int, int]  # (min_sx, min_sy, max_sx, max_sy), inclusive
@@ -64,6 +64,10 @@ class DynamicPlacement:
     max_y: Optional[float] = None
     entries: List[Tuple[float, float]] = field(default_factory=list)
     exits: List[Tuple[float, float]] = field(default_factory=list)
+
+    def pose(self) -> Tuple[int, int, int]:
+        """Return bottom-left pose tuple (x_bl, y_bl, rot)."""
+        return int(self.x_bl), int(self.y_bl), int(self.rot)
 
 
 class DynamicPlanner:

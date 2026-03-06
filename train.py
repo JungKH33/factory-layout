@@ -36,8 +36,8 @@ from tianshou.trainer import OnPolicyTrainer, OnPolicyTrainerParams  # type: ign
 from tianshou.utils.net.common import AbstractDiscreteActor, ModuleWithVectorOutput  # type: ignore
 
 from agents.maskplace import MaskPlaceModel
-from envs.json_loader import load_env
-from envs.wrappers.maskplace import MaskPlaceWrapperEnv
+from envs.env_loader import load_env
+from decision_adapters.maskplace import MaskPlaceDecisionAdapter
 
 
 # -----------------------------
@@ -89,7 +89,7 @@ def parse_args() -> TrainConfig:
     p.add_argument("--mode", type=str, default="alphachip", choices=["maskplace", "alphachip"])
 
     # env/model
-    p.add_argument("--env-json", type=str, default="env_configs/basic_01.json")
+    p.add_argument("--env-json", type=str, default="envs/env_configs/basic_01.json")
     p.add_argument("--maskplace-grid", type=int, default=224)
     p.add_argument("--maskplace-rot", type=int, default=0)
     p.add_argument("--soft-coefficient", type=float, default=1.0)
@@ -429,7 +429,7 @@ def build_env_factory(*, cfg: TrainConfig) -> Tuple[Any, Dict[str, Any]]:
         engine = loaded.env
         engine.log = False
         if cfg.mode == "maskplace":
-            env = MaskPlaceWrapperEnv(
+            env = MaskPlaceDecisionAdapter(
                 engine=engine,
                 grid=int(cfg.grid),
                 rot=int(cfg.rot),
@@ -439,9 +439,9 @@ def build_env_factory(*, cfg: TrainConfig) -> Tuple[Any, Dict[str, Any]]:
             env._reset_kwargs = reset_kwargs  # type: ignore[attr-defined]
             env = NumpyObsWrapper(env, state_uint8=bool(cfg.state_uint8))
         elif cfg.mode == "alphachip":
-            from envs.wrappers.alphachip import AlphaChipWrapperEnv
+            from decision_adapters.alphachip import AlphaChipDecisionAdapter
 
-            env = AlphaChipWrapperEnv(engine=engine, coarse_grid=int(cfg.coarse_grid), rot=int(cfg.alphachip_rot))
+            env = AlphaChipDecisionAdapter(engine=engine, coarse_grid=int(cfg.coarse_grid), rot=int(cfg.alphachip_rot))
             env._reset_kwargs = reset_kwargs  # type: ignore[attr-defined]
             env = NumpyObsWrapper(env, state_uint8=False)
         else:

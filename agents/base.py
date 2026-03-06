@@ -4,18 +4,17 @@ from typing import Protocol
 
 import torch
 
-from envs.env import FactoryLayoutEnv
-from envs.wrappers.candidate_set import CandidateSet
+from envs.action_space import ActionSpace
 
 
 class Agent(Protocol):
-    """Evaluate candidates for the given state."""
+    """Evaluate action_space for the given state."""
 
-    def policy(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> torch.Tensor:
+    def policy(self, *, obs: dict, action_space: ActionSpace) -> torch.Tensor:
         """Return float32 [N] non-negative policy scores/probabilities (not necessarily normalized)."""
 
-    def select_action(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> int:
+    def select_action(self, *, obs: dict, action_space: ActionSpace) -> int:
         """Return an action index in [0, N)."""
 
-    def value(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> float:
+    def value(self, *, obs: dict, action_space: ActionSpace) -> float:
         """Return a scalar leaf value estimate for MCTS (higher should be better)."""

@@ -4,8 +4,7 @@ from dataclasses import dataclass
 
 import torch
 
-from envs.env import FactoryLayoutEnv
-from envs.wrappers.candidate_set import CandidateSet
+from envs.action_space import ActionSpace as CandidateSet
 from .base import Agent
 
 
@@ -13,27 +12,30 @@ from .base import Agent
 class GreedyAgent:
     """Greedy agent (parity with legacy `agents/greedy.py` logic).
 
-    - Select action: argmin(delta_obj) among valid candidates.
-    - Priors: softmax(-delta_obj / prior_temperature) over valid candidates.
+    - Select action: argmin(delta_obj) among valid action_space.
+    - Priors: softmax(-delta_obj / prior_temperature) over valid action_space.
     """
 
     prior_temperature: float = 1.0
 
-    def policy(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> torch.Tensor:
-        device = env.device
-        N = int(candidates.xyrot.shape[0])
-        gid = env.remaining[0] if env.remaining else None
-        if gid is None:
-            return torch.zeros((N,), dtype=torch.float32, device=device)
-
+    def policy(self, *, obs: dict, action_space: CandidateSet) -> torch.Tensor:
+        device = action_space.xyrot.device
+        N = int(action_space.xyrot.shape[0])
         priors = torch.zeros((N,), dtype=torch.float32, device=device)
-        valid = candidates.mask
+        valid = action_space.mask
         valid_idx = torch.where(valid.view(-1))[0]
         if int(valid_idx.numel()) == 0:
             return priors
 
-        xy = candidates.xyrot[valid_idx].to(device=device)
-        scores = env.delta_cost(gid=gid, x=xy[:, 0], y=xy[:, 1], rot=xy[:, 2]).to(dtype=torch.float32, device=device)
+        # Preferred: adapter-precomputed per-action delta cost [N] from action-space meta.
+        meta = action_space.meta if isinstance(action_space.meta, dict) else {}
+        scores_meta = meta.get("action_delta", None)
+        if isinstance(scores_meta, torch.Tensor) and int(scores_meta.numel()) == N:
+            scores = scores_meta.to(dtype=torch.float32, device=device).view(-1)[valid_idx]
+        else:
+            # Fallback: uniform over valid actions.
+            priors[valid_idx] = 1.0 / float(max(1, int(valid_idx.numel())))
+            return priors
 
         temp = float(self.prior_temperature) if float(self.prior_temperature) > 0.0 else 1.0
         logits = -scores / temp
@@ -48,55 +50,64 @@ class GreedyAgent:
         priors[valid_idx] = probs
         return priors
 
-    def select_action(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> int:
-        N = int(candidates.xyrot.shape[0])
-        gid = env.remaining[0] if env.remaining else None
-        if gid is None or N <= 0:
+    def select_action(self, *, obs: dict, action_space: CandidateSet) -> int:
+        N = int(action_space.xyrot.shape[0])
+        if N <= 0:
             return 0
 
-        valid = candidates.mask
+        valid = action_space.mask
         valid_idx = torch.where(valid.view(-1))[0]
         if int(valid_idx.numel()) == 0:
             return 0
 
-        xy = candidates.xyrot[valid_idx].to(device=env.device)
-        scores = env.delta_cost(gid=gid, x=xy[:, 0], y=xy[:, 1], rot=xy[:, 2]).to(dtype=torch.float32, device=env.device)
+        meta = action_space.meta if isinstance(action_space.meta, dict) else {}
+        scores_meta = meta.get("action_delta", None)
+        if not (isinstance(scores_meta, torch.Tensor) and int(scores_meta.numel()) == N):
+            return int(valid_idx[0].item())
+        scores = scores_meta.to(dtype=torch.float32, device=action_space.xyrot.device).view(-1)[valid_idx]
         best_k = int(torch.argmin(scores).item()) if scores.numel() > 0 else 0
         return int(valid_idx[best_k].item()) if int(valid_idx.numel()) > 0 else 0
 
-    def value(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> float:
-        # Leaf value for MCTS: 현재 상태의 예상 최종 reward
-        return env.terminal_reward()
+    def value(self, *, obs: dict, action_space: CandidateSet) -> float:
+        # Optional adapter-provided scalar estimate.
+        v = obs.get("state_value", None)
+        if isinstance(v, torch.Tensor) and v.numel() > 0:
+            return float(v.view(-1)[0].item())
+        if isinstance(v, (float, int)):
+            return float(v)
+        return 0.0
 
 
 if __name__ == "__main__":
     import time
 
-    from envs.json_loader import load_env
-    from envs.wrappers.greedy import GreedyWrapperEnv
-    from envs.wrappers.candidate_set import CandidateSet
+    from envs.env_loader import load_env
+    from decision_adapters.greedy import GreedyDecisionAdapter
+    from envs.action_space import ActionSpace as CandidateSet
 
-    ENV_JSON = "env_configs/basic_01.json"
+    ENV_JSON = "envs/env_configs/basic_01.json"
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
-    wenv = GreedyWrapperEnv(engine=engine, k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
-    obs, _info = wenv.reset(options=loaded.reset_kwargs)
-    next_gid = wenv.engine.remaining[0] if wenv.engine.remaining else None
-    candidates = CandidateSet(xyrot=obs["action_xyrot"], mask=obs["action_mask"], gid=next_gid)
+    adapter = GreedyDecisionAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    _obs_env, _info = engine.reset(options=loaded.reset_kwargs)
+    adapter.bind(engine)
+    obs = adapter.build_observation(_obs_env)
+    action_space = adapter.build_action_space()
+    next_gid = action_space.gid
     agent = GreedyAgent(prior_temperature=1.0)
 
     t0 = time.perf_counter()
-    pri = agent.policy(env=engine, obs=obs, candidates=candidates)
-    a = agent.select_action(env=engine, obs=obs, candidates=candidates)
+    pri = agent.policy(obs=obs, action_space=action_space)
+    a = agent.select_action(obs=obs, action_space=action_space)
     dt_ms = (time.perf_counter() - t0) * 1000.0
 
-    valid_n = int(candidates.mask.sum().item())
-    xyrot = candidates.xyrot[a].tolist() if int(candidates.xyrot.shape[0]) > 0 else [0, 0, 0]
+    valid_n = int(action_space.mask.sum().item())
+    xyrot = action_space.xyrot[a].tolist() if int(action_space.xyrot.shape[0]) > 0 else [0, 0, 0]
 
     print("[agents.greedy demo]")
     print(" env=", ENV_JSON, "device=", device, "next_gid=", next_gid)
-    print(" action=", a, "valid_candidates=", valid_n, "xyrot=", xyrot, "prior=", (float(pri[a].item()) if pri.numel() > 0 else 0.0))
+    print(" action=", a, "valid_actions=", valid_n, "xyrot=", xyrot, "prior=", (float(pri[a].item()) if pri.numel() > 0 else 0.0))
     print(f" elapsed_ms={dt_ms:.3f}")

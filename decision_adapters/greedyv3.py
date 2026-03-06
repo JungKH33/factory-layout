@@ -11,10 +11,10 @@ import torch.nn.functional as F
 
 from envs.env import FactoryLayoutEnv, GroupId  # new env (renamed from env_new)
 
-from .base import BaseWrapper
+from .base import BaseDecisionAdapter
 
 
-class GreedyWrapperV3Env(BaseWrapper):
+class GreedyV3DecisionAdapter(BaseDecisionAdapter):
     """Top-K candidate wrapper: Discrete(K) actions over an in-file TopK generator.
 
     Notes:
@@ -28,7 +28,6 @@ class GreedyWrapperV3Env(BaseWrapper):
     def __init__(
         self,
         *,
-        engine: FactoryLayoutEnv,
         k: int = 50,
         # B-1 (edge-based): sample candidates from the *boundary* of valid top-left map.
         quant_step: Optional[float] = 10.0,
@@ -37,7 +36,7 @@ class GreedyWrapperV3Env(BaseWrapper):
         random_seed: Optional[int] = None,
         optimize_rotation: bool = True,
     ):
-        super().__init__(engine=engine)
+        super().__init__()
         self.k = int(k)
         self.quant_step = float(quant_step) if quant_step is not None else None
         self.oversample_factor = int(oversample_factor)
@@ -49,13 +48,17 @@ class GreedyWrapperV3Env(BaseWrapper):
         self.observation_space = gym.spaces.Dict({})
 
         self.action_xyrot: Optional[torch.Tensor] = None  # long [K,3]
+        self.action_delta: Optional[torch.Tensor] = None  # float [K]
 
     def create_mask(self) -> torch.Tensor:
-        if not self.engine.remaining:
+        # Keep candidate sampling deterministic from engine state.
+        self._rng = random.Random(self.action_space_seed())
+        gid = self.current_gid()
+        if gid is None:
             self.action_xyrot = torch.zeros((self.k, 3), dtype=torch.long, device=self.device)
+            self.action_delta = torch.full((self.k,), float("inf"), dtype=torch.float32, device=self.device)
             return torch.zeros((self.k,), dtype=torch.bool, device=self.device)
 
-        gid = self.engine.remaining[0]
         candidates, mask = self._generate(self.engine, gid)
 
         xyrot = torch.zeros((self.k, 3), dtype=torch.long, device=self.device)
@@ -65,63 +68,50 @@ class GreedyWrapperV3Env(BaseWrapper):
             xyrot[i, 1] = int(y_bl)
             xyrot[i, 2] = int(rot)
         self.action_xyrot = xyrot
+        delta = torch.full((self.k,), float("inf"), dtype=torch.float32, device=self.device)
+        vmask = mask.to(dtype=torch.bool, device=self.device).view(-1)
+        vidx = torch.where(vmask)[0]
+        if int(vidx.numel()) > 0:
+            vv = xyrot[vidx]
+            d = self.engine.delta_cost(gid=gid, x=vv[:, 0], y=vv[:, 1], rot=vv[:, 2]).to(
+                dtype=torch.float32, device=self.device
+            )
+            delta[vidx] = d.view(-1)
+        self.action_delta = delta
         return mask
 
-    def _build_obs(self) -> Dict[str, Any]:
-        assert self.mask is not None
-        assert self.action_xyrot is not None
-        obs = dict(self.engine._build_obs())
-        obs["action_mask"] = self.mask
-        obs["action_xyrot"] = self.action_xyrot
-        return obs
-
-    def decode_action(self, action: int) -> Tuple[float, float, int, int, int]:
-        a = int(action)
-        if self.action_xyrot is None or a < 0 or a >= self.k:
-            return 0.0, 0.0, 0, 0, 0
-        xyz = self.action_xyrot[a]
-        return float(xyz[0].item()), float(xyz[1].item()), int(xyz[2].item()), 0, a
-
-    def step(self, action: int):
-        assert self.mask is not None
-        x, y, rot, _i, cand_idx = self.decode_action(int(action))
-        obs_core, reward, terminated, truncated, info = self.engine.step_masked(
-            action=int(action),
-            x=float(x),
-            y=float(y),
-            rot=int(rot),
-            mask=self.mask,
-            action_space_n=int(self.k),
-            extra_info={"cand_idx": int(cand_idx)},
-        )
-        if not (terminated or truncated):
-            self.mask = self.create_mask()
-            return self._build_obs(), reward, terminated, truncated, info
-        return obs_core, reward, terminated, truncated, info
-
-    # ---- snapshot api (for wrapped search/MCTS) ----
-    def get_snapshot(self) -> Dict[str, object]:
-        snap = dict(super().get_snapshot())
+    # ---- state api (for wrapped search/MCTS) ----
+    def get_state_copy(self) -> Dict[str, object]:
+        snap = dict(super().get_state_copy())
         snap["rng_state"] = self._rng.getstate()
         if isinstance(self.action_xyrot, torch.Tensor):
             snap["action_xyrot"] = self.action_xyrot.clone()
         else:
             snap["action_xyrot"] = None
+        if isinstance(self.action_delta, torch.Tensor):
+            snap["action_delta"] = self.action_delta.clone()
+        else:
+            snap["action_delta"] = None
         return snap
 
-    def set_snapshot(self, snapshot: Dict[str, object]) -> None:
-        super().set_snapshot(snapshot)
-        rs = snapshot.get("rng_state", None)
+    def set_state(self, state: Dict[str, object]) -> None:
+        super().set_state(state)
+        rs = state.get("rng_state", None)
         if rs is not None:
             try:
                 self._rng.setstate(rs)
             except Exception:
                 pass
-        ax = snapshot.get("action_xyrot", None)
+        ax = state.get("action_xyrot", None)
         if isinstance(ax, torch.Tensor):
             self.action_xyrot = ax.to(device=self.device, dtype=torch.long).clone()
         else:
             self.action_xyrot = None
+        ad = state.get("action_delta", None)
+        if isinstance(ad, torch.Tensor):
+            self.action_delta = ad.to(device=self.device, dtype=torch.float32).clone()
+        else:
+            self.action_delta = None
 
     # ---- candidate generation (BL int coords) ----
 
@@ -180,8 +170,8 @@ class GreedyWrapperV3Env(BaseWrapper):
         if w <= 0 or h <= 0:
             return True
 
-        invalid = env._maps.invalid      # torch.BoolTensor[H,W]
-        clear_invalid = env._maps.clear_invalid  # torch.BoolTensor[H,W]
+        invalid = env.get_maps().invalid      # torch.BoolTensor[H,W]
+        clear_invalid = env.get_maps().clear_invalid  # torch.BoolTensor[H,W]
 
         x0 = int(x_bl)
         y0 = int(y_bl)
@@ -206,14 +196,14 @@ class GreedyWrapperV3Env(BaseWrapper):
         - body window must not overlap env._invalid or env._clear_invalid
         - my clearance pad window must not overlap env._invalid
 
-        NOTE: This is intentionally a *prefilter*. We still run env.is_placeable(...) as the final gate.
+        NOTE: This is intentionally a *prefilter*. We still run StaticSpec.is_placeable(...) as the final gate.
         """
         w, h = wh_cache[int(rot)]
         w = max(1, int(w))
         h = max(1, int(h))
 
-        inv = env._maps.invalid.to(dtype=torch.float32).view(1, 1, int(env.grid_height), int(env.grid_width))
-        clr = env._maps.clear_invalid.to(dtype=torch.float32).view(1, 1, int(env.grid_height), int(env.grid_width))
+        inv = env.get_maps().invalid.to(dtype=torch.float32).view(1, 1, int(env.grid_height), int(env.grid_width))
+        clr = env.get_maps().clear_invalid.to(dtype=torch.float32).view(1, 1, int(env.grid_height), int(env.grid_width))
 
         # body window must avoid invalid + clear_invalid
         k_body = torch.ones((1, 1, int(h), int(w)), device=env.device, dtype=inv.dtype)
@@ -338,7 +328,7 @@ class GreedyWrapperV3Env(BaseWrapper):
             (src, c)
             for src, c in unique_tagged
             if (not self._cheap_reject_body(env, gid=next_group_id, x_bl=int(c[1]), y_bl=int(c[2]), rot=int(c[3]), wh_cache=wh_cache))
-            and group.is_placeable(x_bl=int(c[1]), y_bl=int(c[2]), rot=int(c[3]), invalid=env._maps.invalid, clear_invalid=env._maps.clear_invalid)
+            and group.is_placeable(x_bl=int(c[1]), y_bl=int(c[2]), rot=int(c[3]), invalid=env.get_maps().invalid, clear_invalid=env.get_maps().clear_invalid)
         ]
         # Keep order: edge candidates first, then fill. No scoring in v3.
         final: List[Tuple[GroupId, int, int, int]] = [c for _src, c in valid_tagged][: int(self.k)]
@@ -375,44 +365,46 @@ class GreedyWrapperV3Env(BaseWrapper):
 if __name__ == "__main__":
     import torch
 
-    from envs.wrappers.candidate_set import CandidateSet
-    from envs.json_loader import load_env
-    from envs.visualizer import plot_layout
+    from envs.action_space import ActionSpace as CandidateSet
+    from envs.action import EnvAction
+    from envs.env_loader import load_env
+    from envs.env_visualizer import plot_layout
 
-    ENV_JSON = "env_configs/basic_01.json"
+    ENV_JSON = "envs/env_configs/basic_01.json"
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
 
-    env = GreedyWrapperV3Env(engine=engine, k=50, quant_step=10.0, oversample_factor=2, edge_ratio=0.8, random_seed=0)
+    adapter = GreedyV3DecisionAdapter(k=50, quant_step=10.0, oversample_factor=2, edge_ratio=0.8, random_seed=0)
 
     t0 = time.perf_counter()
-    obs, _info = env.reset(options=loaded.reset_kwargs)
+    _obs_env, _info = engine.reset(options=loaded.reset_kwargs)
+    adapter.bind(engine)
+    obs = adapter.build_observation()
+    candidates = adapter.build_action_space()
     dt_reset_ms = (time.perf_counter() - t0) * 1000.0
 
-    valid = int(obs["action_mask"].sum().item())
-    a = int(torch.where(obs["action_mask"])[0][0].item()) if valid > 0 else 0
+    valid = int(candidates.mask.sum().item())
+    a = int(torch.where(candidates.mask)[0][0].item()) if valid > 0 else 0
 
     # Plot: initial candidates (interactive; close to continue)
-    next_gid = env.engine.remaining[0] if env.engine.remaining else None
-    cand0 = CandidateSet(xyrot=obs["action_xyrot"], mask=obs["action_mask"], gid=next_gid, meta={"k": int(env.k)})
-    plot_layout(env, candidate_set=cand0)
+    plot_layout(engine, action_space=candidates)
 
     t1 = time.perf_counter()
-    obs2, _r, _term, _trunc, _info2 = env.step(a)
+    placement = adapter.decode_action(a, candidates)
+    _obs_env2, _r, _term, _trunc, _info2 = engine.step_action(placement)
+    obs2 = adapter.build_observation()
+    candidates2 = adapter.build_action_space()
     dt_step_ms = (time.perf_counter() - t1) * 1000.0
 
     # Plot: after 1 placement + new candidates (if any)
-    if isinstance(obs2, dict) and ("action_mask" in obs2) and ("action_xyrot" in obs2):
-        next_gid2 = env.engine.remaining[0] if env.engine.remaining else None
-        cand1 = CandidateSet(xyrot=obs2["action_xyrot"], mask=obs2["action_mask"], gid=next_gid2, meta={"k": int(env.k)})
-        plot_layout(env, candidate_set=cand1)
+    if int(candidates2.mask.shape[0]) > 0:
+        plot_layout(engine, action_space=candidates2)
     else:
-        plot_layout(env, candidate_set=None)
+        plot_layout(engine, action_space=None)
 
-    print("[GreedyWrapperEnv demo]")
+    print("[GreedyDecisionAdapter demo]")
     print(" env=", ENV_JSON, "device=", device, "k=", 50)
     print(" valid_actions=", valid, "first_valid_action=", a)
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")
-

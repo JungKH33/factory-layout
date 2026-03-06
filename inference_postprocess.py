@@ -16,10 +16,10 @@ from typing import Dict, List
 import time
 import torch
 
-from envs.json_loader import load_env
-from envs.visualizer import plot_layout, save_layout, _draw_layout_layers
+from envs.action import EnvAction
+from envs.env_loader import load_env
+from envs.env_visualizer import plot_layout, save_layout, _draw_layout_layers
 
-from pipeline import DecisionPipeline
 from search.mcts import MCTSConfig, MCTSSearch
 
 from agents.greedy import GreedyAgent
@@ -33,7 +33,7 @@ from postprocess.dynamic_wrapper import DynamicStorageWrapper
 # ============================================================
 
 # 기존 배치 결과 (또는 배치할 환경)
-BASE_ENV_JSON: str = "env_configs/zones_01.json"
+BASE_ENV_JSON: str = "envs/env_configs/zones_01.json"
 
 # Storage 설정
 STORAGE_CONFIGS: List[Dict] = [
@@ -121,8 +121,8 @@ def main() -> None:
     base_env.reset(options=loaded.reset_kwargs)
     
     print(f"  Grid: {base_env.grid_width} x {base_env.grid_height}")
-    print(f"  Placed groups: {len(base_env.placed)}")
-    print(f"  Remaining groups: {len(base_env.remaining)}")
+    print(f"  Placed groups: {len(base_env.get_state().placed)}")
+    print(f"  Remaining groups: {len(base_env.get_state().remaining)}")
     
     # ===== 1.5. 기존 그룹 미리 배치 (하드코딩) =====
     # (gid, x, y, rot) 형식
@@ -143,14 +143,18 @@ def main() -> None:
     if PRE_PLACEMENTS:
         print(f"\n[1.5] Pre-placing {len(PRE_PLACEMENTS)} groups (hardcoded)")
         for gid, x, y, rot in PRE_PLACEMENTS:
-            if gid in base_env.remaining:
-                # _apply_place: 내부 메서드로 배치 + 캐시 업데이트
-                base_env._apply_place(gid, x, y, rot, update_caches=True)
-                print(f"    Placed: {gid} at ({x}, {y}), rot={rot}")
+            if gid in base_env.get_state().remaining:
+                _obs, _reward, _terminated, _truncated, info = base_env.step_action(
+                    EnvAction(gid=gid, x=int(x), y=int(y), rot=int(rot))
+                )
+                if info.get("reason") == "placed":
+                    print(f"    Placed: {gid} at ({x}, {y}), rot={rot}")
+                else:
+                    print(f"    Failed to pre-place {gid}: reason={info.get('reason')}")
             else:
                 print(f"    Skip: {gid} not in remaining (or already placed)")
         
-        print(f"  Now placed: {list(base_env.placed)}")
+        print(f"  Now placed: {list(base_env.get_state().placed)}")
     
     # ===== 2. Storage 설정 =====
     print(f"\n[2] Storage configuration")
@@ -178,7 +182,7 @@ def main() -> None:
                     group_flow[gid1][gid2] = 1.0
         
         # 기존 배치된 그룹과 양방향 연결
-        for gid in base_env.placed:
+        for gid in base_env.get_state().placed:
             for cfg in configs:
                 group_flow.setdefault(gid, {})[cfg.gid] = 1.0
                 group_flow[cfg.gid][gid] = 1.0
@@ -219,8 +223,10 @@ def main() -> None:
         print(f"  Search: MCTS (sims={MCTS_SIMS})")
     else:
         raise ValueError(f"Unknown SEARCH_MODE: {SEARCH_MODE}")
-    
-    pipe = DecisionPipeline(agent=agent, search=search)
+
+    if search is not None:
+        print("  [warn] DynamicStorageWrapper does not support env-owned search after pipeline refactor; fallback to no-search.")
+        search = None
     
     # ===== 7. 실행 =====
     print(f"\n[7] Running inference")
@@ -237,10 +243,19 @@ def main() -> None:
         step += 1
         current_gid = dynamic_env.gid
         
-        # Action 선택
-        action, dbg_act, candidates = pipe.act(env=env, obs=obs)
-        
-        # Step 실행
+        # Wrapper decide (no pipeline/search in dynamic wrapper path)
+        obs_decision = env.build_observation()
+        action_space = env.build_action_space()
+        valid_n = int(action_space.mask.to(torch.int64).sum().item())
+        if valid_n <= 0:
+            reward = -1.0
+            terminated = False
+            truncated = True
+            info = {"reason": "no_valid_actions"}
+            print(f"[step {step}] gid={current_gid}, reason=no_valid_actions")
+            total_reward += float(reward)
+            break
+        action = int(agent.select_action(obs=obs_decision, action_space=action_space))
         obs, reward, terminated, truncated, info = env.step(int(action))
         total_reward += float(reward)
         

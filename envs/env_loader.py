@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 
 from envs.env import FactoryLayoutEnv
-from envs.core.static import StaticSpec
+from envs.placement.static import StaticSpec
 
 GroupId = Union[int, str]
 RectI = Tuple[int, int, int, int]  # (x0, y0, x1, y1) half-open
@@ -120,6 +120,8 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         height_areas=height_areas,
         dry_areas=dry_areas,
         placement_areas=placement_areas,
+        reward_scale=float(env_cfg.get("reward_scale", 100.0)),
+        penalty_weight=float(env_cfg.get("penalty_weight", 50000.0)),
     )
 
     reset_cfg = data.get("reset", {})

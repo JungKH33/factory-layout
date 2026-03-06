@@ -9,15 +9,17 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from envs.json_loader import load_env
-from envs.wrappers.greedy import GreedyWrapperEnv
-from envs.wrappers.greedyv2 import GreedyWrapperV2Env
-from envs.wrappers.greedyv3 import GreedyWrapperV3Env
-from envs.wrappers.alphachip import AlphaChipWrapperEnv
-from envs.wrappers.maskplace import MaskPlaceWrapperEnv
-from envs.wrappers.candidate_set import CandidateSet
+from envs.env_loader import load_env
+from envs.state import EnvState
+from decision_adapters.greedy import GreedyDecisionAdapter
+from decision_adapters.greedyv2 import GreedyV2DecisionAdapter
+from decision_adapters.greedyv3 import GreedyV3DecisionAdapter
+from decision_adapters.alphachip import AlphaChipDecisionAdapter
+from decision_adapters.maskplace import MaskPlaceDecisionAdapter
+from envs.action_space import ActionSpace as CandidateSet
 
 from agents.greedy import GreedyAgent
+from ordering_agents import DifficultyOrderingAgent
 from agents.alphachip.agent import AlphaChipAgent
 from agents.maskplace import MaskPlaceAgent
 
@@ -39,8 +41,8 @@ from webui.schemas import (
 
 @dataclass
 class HistoryEntry:
-    """A snapshot of env state for undo/redo."""
-    snapshot: Dict[str, Any]
+    """A state checkpoint for undo/redo."""
+    state: Dict[str, Any]
     candidates: Optional[CandidateSet]
     scores: Optional[np.ndarray]
     value: float
@@ -80,13 +82,16 @@ class Session:
 
     def _save_to_history(self) -> None:
         """Save current state to history (for undo)."""
-        snap = self.env.get_snapshot()
+        state = {
+            "engine": self.pipeline.engine.get_state().copy(),
+            "adapter": self.env.get_state_copy(),
+        }
         entry = HistoryEntry(
-            snapshot=snap,
+            state=state,
             candidates=self.candidates,
             scores=self.scores.copy() if self.scores is not None else None,
             value=self.value,
-            cost=float(self.env.engine.cost()),
+            cost=float(self.pipeline.engine.cost()),
         )
         # Truncate future history if we're not at the end
         if self.history_index < len(self.history) - 1:
@@ -99,7 +104,14 @@ class Session:
         if index < 0 or index >= len(self.history):
             return
         entry = self.history[index]
-        self.env.set_snapshot(entry.snapshot)
+        ss = entry.state
+        if isinstance(ss, dict):
+            eng = ss.get("engine", None)
+            adp = ss.get("adapter", None)
+            if isinstance(eng, EnvState):
+                self.pipeline.engine.set_state(eng)
+            if isinstance(adp, dict):
+                self.env.set_state(adp)
         self.candidates = entry.candidates
         self.scores = entry.scores
         self.value = entry.value
@@ -125,8 +137,9 @@ class Session:
 
     def _update_candidates(self) -> None:
         """Update candidates and scores from current observation."""
-        engine = self.env.engine
-        next_gid = engine.remaining[0] if engine.remaining else None
+        engine = self.pipeline.engine
+        cur = getattr(self.env, "current_gid", None)
+        next_gid = cur() if callable(cur) else (engine.get_state().remaining[0] if engine.get_state().remaining else None)
         
         if isinstance(self.obs, dict) and "action_mask" in self.obs:
             if "action_xyrot" in self.obs:
@@ -162,10 +175,11 @@ class Session:
         
         # Placed facilities
         placed = []
-        for gid in engine.placed:
-            x_bl, y_bl, rot = engine.positions[gid]
-            group = engine.groups[gid]
-            w, h = engine.rotated_size(group, rot)
+        for gid in engine.get_state().placed:
+            p = engine.get_state().placements[gid]
+            x_bl, y_bl, rot = p.pose()
+            group = engine.group_specs[gid]
+            w, h = group._rotated_size(int(rot))
             placed.append(PlacedFacility(
                 gid=str(gid),
                 x=float(x_bl),
@@ -186,11 +200,8 @@ class Session:
                 x_bl, y_bl, rot = xyrot[i]
                 # Convert to center for display
                 if self.candidates.gid is not None:
-                    cx, cy = engine.center_from_bl(
-                        gid=self.candidates.gid,
-                        x_bl=int(x_bl),
-                        y_bl=int(y_bl),
-                        rot=int(rot),
+                    cx, cy = engine.group_specs[self.candidates.gid]._center_from_bl(
+                        int(x_bl), int(y_bl), int(rot)
                     )
                 else:
                     cx, cy = float(x_bl), float(y_bl)
@@ -206,7 +217,7 @@ class Session:
                     q_value=0.0,
                 ))
         
-        current_gid = engine.remaining[0] if engine.remaining else None
+        current_gid = engine.get_state().remaining[0] if engine.get_state().remaining else None
         
         # Extract zones
         def _extract_zones(areas_attr: str) -> list:
@@ -233,12 +244,16 @@ class Session:
             for dst, weight in targets.items():
                 edge = FlowEdge(src=str(src), dst=str(dst), weight=float(weight))
                 # Add positions if both are placed
-                if src in engine.placed:
-                    sx, sy = engine.pose_center(src)
+                if src in engine.get_state().placed:
+                    p_src = engine.get_state().placements[src]
+                    sx = float(getattr(p_src, "cx"))
+                    sy = float(getattr(p_src, "cy"))
                     edge.src_x = float(sx)
                     edge.src_y = float(sy)
-                if dst in engine.placed:
-                    dx, dy = engine.pose_center(dst)
+                if dst in engine.get_state().placed:
+                    p_dst = engine.get_state().placements[dst]
+                    dx = float(getattr(p_dst, "cx"))
+                    dy = float(getattr(p_dst, "cy"))
                     edge.dst_x = float(dx)
                     edge.dst_y = float(dy)
                 flow_edges.append(edge)
@@ -247,14 +262,14 @@ class Session:
             grid_width=int(engine.grid_width),
             grid_height=int(engine.grid_height),
             placed=placed,
-            remaining=[str(g) for g in engine.remaining],
+            remaining=[str(g) for g in engine.get_state().remaining],
             current_gid=str(current_gid) if current_gid else None,
             candidates=candidates,
             value=float(self.value),
             cost=float(engine.cost()),
-            step=len(engine.placed),
+            step=len(engine.get_state().placed),
             history_length=len(self.history),
-            terminated=self.terminated or len(engine.remaining) == 0,
+            terminated=self.terminated or len(engine.get_state().remaining) == 0,
             can_undo=self.can_undo(),
             can_redo=self.can_redo(),
             forbidden_areas=forbidden_areas_out,
@@ -299,8 +314,7 @@ class SessionManager:
                         for k, v in params.items() if k.startswith('wrapper_')}
         
         if req.wrapper_mode == "greedy":
-            env = GreedyWrapperEnv(
-                engine=engine,
+            env = GreedyDecisionAdapter(
                 k=wrapper_params.get('k', 50),
                 scan_step=wrapper_params.get('scan_step', 2000.0),
                 quant_step=wrapper_params.get('quant_step', 10.0),
@@ -311,8 +325,7 @@ class SessionManager:
                 random_seed=42,
             )
         elif req.wrapper_mode == "greedyv2":
-            env = GreedyWrapperV2Env(
-                engine=engine,
+            env = GreedyV2DecisionAdapter(
                 k=wrapper_params.get('k', 50),
                 scan_step=wrapper_params.get('scan_step', 2000.0),
                 quant_step=wrapper_params.get('quant_step', 10.0),
@@ -323,8 +336,7 @@ class SessionManager:
                 random_seed=42,
             )
         elif req.wrapper_mode == "greedyv3":
-            env = GreedyWrapperV3Env(
-                engine=engine,
+            env = GreedyV3DecisionAdapter(
                 k=wrapper_params.get('k', 50),
                 quant_step=wrapper_params.get('quant_step', 10.0),
                 oversample_factor=wrapper_params.get('oversample_factor', 2),
@@ -332,14 +344,12 @@ class SessionManager:
                 random_seed=42,
             )
         elif req.wrapper_mode == "alphachip":
-            env = AlphaChipWrapperEnv(
-                engine=engine,
+            env = AlphaChipDecisionAdapter(
                 coarse_grid=wrapper_params.get('coarse_grid', 128),
                 rot=0,
             )
         elif req.wrapper_mode == "maskplace":
-            env = MaskPlaceWrapperEnv(
-                engine=engine,
+            env = MaskPlaceDecisionAdapter(
                 grid=wrapper_params.get('grid', 224),
                 rot=0,
                 soft_coefficient=wrapper_params.get('soft_coefficient', 1.0),
@@ -411,8 +421,23 @@ class SessionManager:
             )
         else:
             raise ValueError(f"Unknown search_mode: {req.search_mode}")
-        
-        pipeline = DecisionPipeline(agent=agent, search=search)
+
+        ordering_mode = str(params.get("ordering_mode", "none"))
+        if ordering_mode == "none":
+            ordering_agent = None
+        elif ordering_mode == "difficulty":
+            ordering_agent = DifficultyOrderingAgent()
+        else:
+            raise ValueError(f"Unknown ordering_mode: {ordering_mode}")
+
+        pipeline = DecisionPipeline(
+            agent=agent,
+            engine=engine,
+            adapter=env,
+            search=search,
+            ordering_agent=ordering_agent,
+        )
+        env.bind(engine)
         
         session = Session(
             sid=sid,
@@ -425,7 +450,8 @@ class SessionManager:
         )
         
         # Reset environment
-        session.obs, _ = env.reset(options=loaded.reset_kwargs)
+        _obs_core, _ = engine.reset(options=loaded.reset_kwargs)
+        session.obs = env.build_observation(_obs_core)
         session._update_candidates()
         session._save_to_history()
         

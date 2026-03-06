@@ -16,18 +16,16 @@ python inference.py
 python run_webui.py
 
 # Training
-python train.py --mode maskplace --env-json env_configs/basic_01.json --device cuda
-python train_torchrl.py --env-json env_configs/basic_01.json --device cuda
+python train.py --mode maskplace --env-json envs/env_configs/basic_01.json --device cuda
+python train_torchrl.py --env-json envs/env_configs/basic_01.json --device cuda
 
 # Preprocess raw facility JSON → env config
 python -m preprocess.to_env input.json output.json
 
-# Quick smoke test for env_new
-python -m envs.env_new          # runs __main__ timing demo
-python -m envs.static           # runs __main__ batch timing demo
-
-# Quick module import check
-python -c "from envs.env_new import FactoryLayoutEnv, PlacementBase, GridMaps; print('OK')"
+# Quick smoke tests (individual modules have __main__ blocks)
+python -m envs.env
+python -m envs.placement.static
+python -m decision_adapters.greedyv3
 ```
 
 There are no automated tests or a lint config. Validation is done by running the demo `__main__` blocks in individual modules.
@@ -37,83 +35,114 @@ There are no automated tests or a lint config. Validation is done by running the
 ### Layered stack (bottom → top)
 
 ```
-env_configs/*.json          ← problem definition (grid, facilities, flow, zones)
-       ↓  json_loader.py
-envs/env.py                 ← FactoryLayoutEnv (Gymnasium env, primary production env)
-envs/env_new.py             ← refactored env (in-progress replacement for env.py)
+envs/env_configs/*.json          ← problem definition (grid, facilities, flow, zones)
+       ↓  env_loader.py
+envs/env.py                      ← FactoryLayoutEnv (single production Gymnasium env)
        ↓
-envs/wrappers/greedyv3.py   ← action-space wrapper: Discrete(K) over Top-K candidates
+decision_adapters/greedyv3.py    ← generates ActionSpace(xyrot[K,3], mask[K]) from engine state
        ↓
-agents/greedy.py            ← policy: argmin(Δcost) over candidates
-search/mcts.py              ← optional tree search wrapping the wrapper env
+agents/greedy.py                 ← policy: argmin(Δcost) over candidates
+search/mcts.py                   ← optional tree search over adapter
        ↓
-pipeline.py                 ← DecisionPipeline(agent, search) — ties it all together
+pipeline.py                      ← DecisionPipeline(adapter, agent, search) — ties it together
        ↓
-inference.py                ← episode loop, visualization, output
+inference.py                     ← episode loop, visualization, output
 ```
 
-### Two env files: `env.py` vs `env_new.py`
+### Decision adapters (replaces old `envs/wrappers/`)
 
-- **`env.py`** is the production environment used by wrappers, training, and most of the codebase.
-- **`env_new.py`** is a refactored version (in progress). It is *not* yet wired into wrappers or training. Both expose the same public API (`step_action`, `reset`, `estimate_delta_obj`, `cal_obj`, `get_snapshot`/`set_snapshot`).
-- `env_new.py` introduces `PlacementBase` (common placement contract) and `GridMaps` (encapsulates all map tensors and update logic that was previously spread across 7 methods in `FactoryLayoutEnv`).
+Decision adapters (`decision_adapters/`) are **not** Gymnasium envs. They are pure stateless-ish adapters that:
+- `build_action_space()` → `ActionSpace(xyrot, mask)` from current engine state
+- `decode_action(index, action_space)` → `EnvAction(gid, x, y, rot)`
+- `build_observation()` → dict for agent policies
 
-### Env internal map layers
+The pipeline calls `engine.step_action(action)` directly — adapters never step the env themselves.
 
-The engine maintains four boolean `[H,W]` tensors composed into a single `invalid` mask:
+Available adapters: `GreedyDecisionAdapter`, `GreedyV2DecisionAdapter`, `GreedyV3DecisionAdapter` (recommended), `AlphaChipDecisionAdapter`, `MaskPlaceDecisionAdapter`.
+
+### Env internal state
+
+`FactoryLayoutEnv` owns an `EnvState` (from `envs/state/`) containing:
+
+- **`GridMaps`** (`envs/state/maps.py`): all `[H,W]` boolean/float tensors
 
 | Tensor | Meaning |
 |---|---|
-| `static_invalid` | forbidden areas (permanent) |
+| `static_invalid` | forbidden areas (permanent, shared on copy) |
 | `occ_invalid` | body footprints of placed facilities |
-| `clear_invalid` | clearance halos of placed facilities (queried separately from invalid) |
-| `zone_invalid` | constraint zones for the *next* group to be placed (changes each step) |
+| `clear_invalid` | clearance halos of placed facilities |
+| `zone_invalid` | constraint zones for the *next* group (weight/height/dry/allowed_areas) |
 | `invalid` | `static \| occ \| zone` — what `is_placeable` checks |
 
-`zone_invalid` is recomputed after every placement based on `remaining[0]`'s `facility_weight/height/dry` and `allowed_areas` fields.
+- **`FlowGraph`** (`envs/state/flow.py`): IO port caches, flow weight matrix (incrementally updated)
+- **`PlacementBase`** (`envs/placement/base.py`): placed facility geometry (x_bl, y_bl, rot, ports, clearances)
+
+State copy/restore: `engine.get_state().copy()` / `engine.set_state(state)`. Static tensors are shared by reference on copy (cheap for MCTS snapshots); only runtime tensors (occ, clear, zone, invalid) are cloned.
 
 ### Reward signal
 
-Step reward = `-(cost_new - cost_prev) / cost_scale`
+Step reward = `-(delta_cost) / reward_scale`
 
-`cal_obj()` computes weighted L1 (Manhattan) flow distance between facility entry/exit ports + compactness (HPWL). `estimate_delta_obj()` computes the *incremental* cost change for a batch of candidate placements using tensor ops (used by wrappers and greedy agent without actually stepping the env).
+`RewardComposer` (`envs/reward/`) holds named components:
+- **FlowReward**: weighted L1 (Manhattan) distance between IO ports. `delta()` uses `[M,1,C,1,2] - [1,T,1,P,2]` broadcasting for batch candidate evaluation.
+- **AreaReward**: HPWL compactness `0.5 * ((max_x-min_x) + (max_y-min_y))`
+- **TerminalReward**: failure penalty = `penalty_weight * remaining_area_ratio / reward_scale`
 
-### Wrapper contract
-
-Every wrapper (`GreedyWrapperV3Env`, `AlphaChipWrapperEnv`, `MaskPlaceWrapperEnv`) must produce:
-- `obs["action_mask"]`: `BoolTensor[K]` — True = valid action
-- `obs["action_xyrot"]`: `LongTensor[K,3]` — `(x_bl, y_bl, rot)` for each candidate
-
-`pipeline.py` reads these to build a `CandidateSet` and route it through `agent.select_action()` or `search.select()`.
+`engine.delta_cost(gid, x_batch, y_batch, rot_batch)` is the vectorized incremental cost used by adapters and agents (never full `cost()` per candidate).
 
 ### Search (MCTS / Beam)
 
-Search operates at the **wrapper** level, not the engine level. Each MCTS node stores a `get_snapshot()`/`set_snapshot()` copy of the engine state. The agent provides priors (softmax of `-Δcost`) and leaf values (`estimate_terminal_reward()`). Rollouts use the greedy agent to completion.
+Search operates at the **adapter** level. Each MCTS node stores an `EnvState` copy via `engine.get_state().copy()`. The agent provides priors (softmax of `-Δcost`) and leaf values. Rollouts use the greedy agent to a configurable depth.
 
-### `env_configs/*.json` schema
+`TopKTracker` (min-heap) tracks best K complete episodes by cost across all search iterations.
 
-Key fields:
-- `grid_width`, `grid_height`, `grid_size` (meters per cell)
-- `groups`: dict of facility specs with `width`, `height`, `rotatable`, `ent_rel_x/y`, `exi_rel_x/y`, `clearance_*`, `allowed_areas`, `facility_weight/height/dry`
-- `flow_edges`: `[[src, dst, weight], ...]` — directed material flow graph
-- `forbidden_areas`, `weight_areas`, `height_areas`, `dry_areas`, `placement_areas`: list of `{"rect": [x0,y0,x1,y1], ...}`
+### Pipeline flow
 
-`json_loader.load_env(path, device)` returns `LoadedEnv(env, reset_kwargs)` where `reset_kwargs` carries `initial_positions` if the config has pre-placed facilities.
+```python
+DecisionPipeline.decide():
+  1. ordering_agent.reorder(env, obs)       # optional: reorders remaining[]
+  2. adapter.build_observation()             # -> obs dict
+  3. adapter.build_action_space()            # -> ActionSpace (runs create_mask internally)
+  4. search.select(obs, agent, action_space) # or agent.select_action(obs, action_space)
+  5. adapter.decode_action(index, action_space) # -> EnvAction
+  6. return (action, debug_dict)
+```
+
+### `envs/env_configs/*.json` schema
+
+```json
+{
+  "grid": { "width": 500, "height": 500, "grid_size": 1.0 },
+  "env": { "default_weight": 10.0, "default_height": 20.0, "default_dry": 0.0,
+           "reward_scale": 100.0, "penalty_weight": 50000.0 },
+  "groups": { "<gid>": { "width", "height", "rotatable", "ent_rel_x/y", "exi_rel_x/y",
+                          "facility_clearance_*", "facility_weight/height/dry", "allowed_areas" } },
+  "flow": [["<src>", "<dst>", <weight>], ...],
+  "zones": { "forbidden_areas", "weight_areas", "height_areas", "dry_areas", "placement_areas" },
+  "reset": { "initial_positions": {"<gid>": [x, y, rot]}, "remaining_order": [...] }
+}
+```
+
+Zone constraint logic: weight `<` → invalid, height `<` → invalid, dry `>` → invalid (reversed), allowed_areas → must be inside.
+
+`env_loader.load_env(path, device)` returns `LoadedEnv(env, reset_kwargs)`.
 
 ### Postprocessing
 
-After inference, `postprocess/` handles:
-- **`RoutePlanner`** (`pathfinder.py`): Dijkstra/A* on the grid, routing material flows between placed facilities while avoiding bodies but allowing clearance traversal.
-- **`DynamicPlanner`** (`dynamic.py` in `envs/`): Frontier BFS expansion for "dynamic" (storage rack) groups whose footprint is not fixed but grows to fill a required capacity. Uses Conv2D-based validity checking and flow-penalty-guided expansion.
+- **`RoutePlanner`** (`postprocess/pathfinder.py`): Dijkstra/A* on grid, routing flows between placed facilities.
+- **`DynamicGroupGenerator`** (`postprocess/dynamic_group.py`): BFS frontier expansion for storage racks with variable footprint.
+- **`DynamicPlanner`** (`envs/placement/dynamic.py`): Conv2D-based validity expansion for dynamic groups.
 
 ### WebUI session model
 
-`webui/session.py` manages per-session `(env, wrapper, agent, search, history)`. History is a stack of `get_snapshot()` dicts enabling undo. The FastAPI backend exposes REST for step/undo/search and WebSocket for streaming search progress.
+`webui/session.py` manages per-session `(adapter, agent, search, pipeline, history)`. History is a stack of `(EnvState, adapter_state)` enabling undo/redo. FastAPI backend exposes REST for step/undo/search and WebSocket for streaming `SearchProgress`.
 
 ## Key Conventions
 
-- **Coordinate system**: bottom-left origin `(x_bl, y_bl)`, rotation in `{0, 90, 180, 270}` degrees CCW.
-- **Grid units**: integer cells. `grid_size` (meters/cell) is only for display/output — the engine works in pure integer cells.
-- **Device ownership**: `StaticGeom` owns a `device` and all its tensor ops run on it. The env inherits device from the geom specs via `json_loader`.
-- **`inference.py` config**: controlled by module-level constants at the top (`ENV_JSON`, `WRAPPER_MODE`, `AGENT_MODE`, `SEARCH_MODE`, etc.) — no CLI args.
-- **`env_new.py` vs `env.py`**: When extending the refactored env, use `env_new.py`. When touching training/wrappers/inference, use `env.py` until migration is complete.
+- **Coordinate system**: bottom-left origin `(x_bl, y_bl)`, rotation in `{0, 90, 180, 270}` degrees CCW. Tensor indexing is `tensor[y, x]`.
+- **Grid units**: integer cells. `grid_size` (meters/cell) is only for display/output.
+- **Device ownership**: engine's `device` is set at construction; all tensors follow it. Adapters inherit device on `bind()`.
+- **`inference.py` config**: module-level constants (`ENV_JSON`, `WRAPPER_MODE`, `AGENT_MODE`, `SEARCH_MODE`, etc.) — no CLI args.
+- **`remaining[0]` = current facility**: always places `remaining[0]` next. Ordering agents reorder this list. `gid=None` in `EnvAction` means "use remaining[0]".
+- **Delta pattern**: all candidate evaluation uses `delta_cost()` (vectorized incremental) rather than full `cost()` per candidate.
+- **Static-sharing on copy**: `GridMaps.copy()` shares static tensors by reference, clones only runtime tensors. Makes MCTS snapshots cheap.

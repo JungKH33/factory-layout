@@ -9,11 +9,11 @@
 #
 # Assumptions:
 # - You will install `torchrl` and `tensordict` later.
-# - `envs/wrappers/maskplace.py:MaskPlaceWrapperEnv` already returns torch.Tensor obs (incl. 'state')
+# - `envs/wrappers/maskplace.py:MaskPlaceDecisionAdapter` already returns torch.Tensor obs (incl. 'state')
 #   even on terminal/truncated (stable obs schema).
 #
 # Usage (example):
-#   conda run -n factory python train_new.py --env-json env_configs/placed_01.json --device cuda
+#   conda run -n factory python train_new.py --env-json envs/env_configs/placed_01.json --device cuda
 #
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ from torch import nn
 import time
 
 from agents.maskplace import MaskPlaceModel
-from envs.json_loader import load_env
-from envs.wrappers.maskplace import MaskPlaceWrapperEnv
+from envs.env_loader import load_env
+from decision_adapters.maskplace import MaskPlaceDecisionAdapter
 
 
 def _require_torchrl() -> None:
@@ -75,7 +75,7 @@ class Cfg:
 
 def parse_args() -> Cfg:
     p = argparse.ArgumentParser()
-    p.add_argument("--env-json", type=str, default="env_configs/basic_01.json")
+    p.add_argument("--env-json", type=str, default="envs/env_configs/basic_01.json")
     p.add_argument("--grid", type=int, default=224)
     p.add_argument("--rot", type=int, default=0)
     p.add_argument("--soft-coefficient", type=float, default=1.0)
@@ -133,7 +133,7 @@ class _MaskPlaceTorchRLEnv:  # EnvBase subclass defined lazily after torchrl imp
 
 
 def build_torchrl_env(*, cfg: Cfg, device: torch.device):
-    """Build a TorchRL EnvBase that wraps MaskPlaceWrapperEnv and emits TensorDicts on `device`."""
+    """Build a TorchRL EnvBase that wraps MaskPlaceDecisionAdapter and emits TensorDicts on `device`."""
     _require_torchrl()
     from tensordict import TensorDict
     from torchrl.envs import EnvBase
@@ -159,7 +159,7 @@ def build_torchrl_env(*, cfg: Cfg, device: torch.device):
             loaded = load_env(cfg.env_json, device=device)
             engine = loaded.env
             engine.log = False
-            self._gym = MaskPlaceWrapperEnv(
+            self._gym = MaskPlaceDecisionAdapter(
                 engine=engine,
                 grid=int(cfg.grid),
                 rot=int(cfg.rot),

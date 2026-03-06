@@ -621,7 +621,7 @@ def validate_and_adjust_groups(
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     
-    from envs.json_loader import load_env
+    from envs.env_loader import load_env
     
     for iteration in range(max_iterations):
         # 임시 JSON 파일로 저장 후 env 로드
@@ -638,12 +638,27 @@ def validate_and_adjust_groups(
         
         # placeable 검사 (remaining = 아직 배치 안 된 그룹)
         problematic_groups = []
-        for gid in env.remaining:
-            g = env.groups[gid]
+        for gid in env.get_state().remaining:
+            g = env.group_specs[gid]
             if g.rotatable:
-                count = env.count_placeable(gid, rot=0) + env.count_placeable(gid, rot=90)
+                mask0 = g.is_placeable_mask(
+                    rot=0,
+                    invalid=env.get_maps().invalid,
+                    clear_invalid=env.get_maps().clear_invalid,
+                )
+                mask90 = g.is_placeable_mask(
+                    rot=90,
+                    invalid=env.get_maps().invalid,
+                    clear_invalid=env.get_maps().clear_invalid,
+                )
+                count = int(mask0.sum().item()) + int(mask90.sum().item())
             else:
-                count = env.count_placeable(gid, rot=0)
+                mask0 = g.is_placeable_mask(
+                    rot=0,
+                    invalid=env.get_maps().invalid,
+                    clear_invalid=env.get_maps().clear_invalid,
+                )
+                count = int(mask0.sum().item())
             
             if count == 0:
                 problematic_groups.append(gid)

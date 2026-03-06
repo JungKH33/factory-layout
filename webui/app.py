@@ -18,15 +18,17 @@ from fastapi.staticfiles import StaticFiles
 # Thread pool for running sync search in background
 _search_executor = ThreadPoolExecutor(max_workers=2)
 
-from envs.wrappers.candidate_set import CandidateSet
-from envs.wrappers.greedy import GreedyWrapperEnv
-from envs.wrappers.greedyv2 import GreedyWrapperV2Env
-from envs.wrappers.greedyv3 import GreedyWrapperV3Env
-from envs.wrappers.alphachip import AlphaChipWrapperEnv
-from envs.wrappers.maskplace import MaskPlaceWrapperEnv
+from envs.action_space import ActionSpace as CandidateSet
+from decision_adapters.greedy import GreedyDecisionAdapter
+from decision_adapters.greedyv2 import GreedyV2DecisionAdapter
+from decision_adapters.greedyv3 import GreedyV3DecisionAdapter
+from decision_adapters.alphachip import AlphaChipDecisionAdapter
+from decision_adapters.maskplace import MaskPlaceDecisionAdapter
 from search.mcts import MCTSConfig
 from search.beam import BeamConfig
 from agents.greedy import GreedyAgent
+from envs.action import EnvAction
+from envs.state import EnvState
 
 
 def _extract_params(cls, exclude: set = None) -> Dict[str, Dict[str, Any]]:
@@ -104,11 +106,11 @@ def _extract_params(cls, exclude: set = None) -> Dict[str, Dict[str, Any]]:
 
 # Registry of components and their classes
 WRAPPER_CLASSES = {
-    "greedy": GreedyWrapperEnv,
-    "greedyv2": GreedyWrapperV2Env,
-    "greedyv3": GreedyWrapperV3Env,
-    "alphachip": AlphaChipWrapperEnv,
-    "maskplace": MaskPlaceWrapperEnv,
+    "greedy": GreedyDecisionAdapter,
+    "greedyv2": GreedyV2DecisionAdapter,
+    "greedyv3": GreedyV3DecisionAdapter,
+    "alphachip": AlphaChipDecisionAdapter,
+    "maskplace": MaskPlaceDecisionAdapter,
 }
 
 SEARCH_CLASSES = {
@@ -150,8 +152,8 @@ async def list_configs():
     """List available environment config files."""
     configs = []
     
-    # Check env_configs directory
-    env_configs_dir = Path("env_configs")
+    # Check envs/env_configs directory
+    env_configs_dir = Path("envs/env_configs")
     if env_configs_dir.exists():
         for f in env_configs_dir.glob("*.json"):
             configs.append(str(f))
@@ -235,8 +237,37 @@ async def step(sid: str, req: StepRequest):
             session._save_to_history()
             
             # Execute step
-            session.obs, reward, session.terminated, session.truncated, info = \
-                session.env.step(req.action)
+            adapter = session.env
+            engine = session.pipeline.engine
+            adapter.bind(engine)
+            obs_dec = adapter.build_observation(session.obs if isinstance(session.obs, dict) else {})
+            candidates = adapter.build_candidates(obs_dec)
+            mask = candidates.mask.to(dtype=torch.bool, device=adapter.device).view(-1)
+            a = int(req.action)
+
+            if int(mask.shape[0]) <= 0 or int(mask.to(torch.int64).sum().item()) == 0:
+                session.obs = obs_dec
+                reward = float(engine.failure_penalty())
+                session.terminated = False
+                session.truncated = True
+                info = {"reason": "no_valid_actions"}
+            elif a < 0 or a >= int(mask.shape[0]):
+                session.obs = obs_dec
+                reward = float(engine.failure_penalty())
+                session.terminated = False
+                session.truncated = True
+                info = {"reason": "action_out_of_range"}
+            elif not bool(mask[a].item()):
+                session.obs = obs_dec
+                reward = float(engine.failure_penalty())
+                session.terminated = False
+                session.truncated = True
+                info = {"reason": "masked_action"}
+            else:
+                x_bl, y_bl, rot, _i, _j = adapter.decode_action(a)
+                placement = EnvAction(x=int(x_bl), y=int(y_bl), rot=int(rot))
+                obs_core, reward, session.terminated, session.truncated, info = engine.step_action(placement)
+                session.obs = adapter.build_observation(obs_core)
             
             # Update candidates for new state
             session._update_candidates()
@@ -294,7 +325,11 @@ async def reset(sid: str):
         session = await manager.get_session(sid)
         
         async with session._lock:
-            session.obs, _ = session.env.reset(options=session.reset_kwargs)
+            adapter = session.env
+            engine = session.pipeline.engine
+            adapter.bind(engine)
+            _obs_core, _ = engine.reset(options=session.reset_kwargs)
+            session.obs = adapter.build_observation(_obs_core)
             session.terminated = False
             session.truncated = False
             session._update_candidates()
@@ -372,20 +407,40 @@ async def _run_search_with_updates(
         return {"error": "No search algorithm configured"}
     
     if not isinstance(search, BaseSearch):
-        # Fallback for non-BaseSearch implementations
-        action, dbg, candidates = session.pipeline.act(
-            env=session.env,
-            obs=session.obs,
-        )
-        return {"best_action": int(action), "debug": dbg}
+        # Fallback for non-BaseSearch implementations:
+        # run one decision pass (no env step), then restore state.
+        state = {
+            "engine": session.pipeline.engine.get_state().copy(),
+            "adapter": session.env.get_state_copy(),
+        }
+        try:
+            adapter = session.env
+            obs_dec = adapter.build_observation(session.obs if isinstance(session.obs, dict) else {})
+            candidates = adapter.build_candidates(obs_dec)
+            a = int(session.agent.select_action(obs=obs_dec, candidates=candidates))
+            dbg = {
+                "action": int(a),
+                "search": "fallback_non_base",
+                "reason": "fallback_non_base_search",
+                "candidates": candidates,
+            }
+            return {"best_action": int(dbg.get("action", 0)), "debug": dbg}
+        finally:
+            eng_state = state.get("engine", None)
+            adp_state = state.get("adapter", None)
+            if isinstance(eng_state, EnvState):
+                session.pipeline.engine.set_state(eng_state)
+            if isinstance(adp_state, dict):
+                session.env.set_state(adp_state)
     
     candidates = session.candidates
     if candidates is None:
         return {"error": "No candidates"}
     
-    # Save initial snapshot
-    env = session.env
-    initial_snapshot = env.get_snapshot()
+    # Save initial state
+    engine = session.pipeline.engine
+    adapter = session.env
+    initial_state = {"engine": engine.get_state().copy(), "adapter": adapter.get_state_copy()}
     
     # Store latest progress for final response
     latest_progress: Dict[str, Any] = {}
@@ -432,14 +487,14 @@ async def _run_search_with_updates(
         )
     
     search.set_progress_callback(threadsafe_callback, interval=broadcast_interval)
+    search.set_adapter(adapter)
     
     def run_search_sync():
         """Run search synchronously (for executor)."""
         return search.select(
-            env=env,
             obs=session.obs,
             agent=session.agent,
-            root_candidates=candidates,
+            root_action_space=candidates,
         )
     
     try:
@@ -454,7 +509,12 @@ async def _run_search_with_updates(
             search.config = original_config
     
     # Restore initial state
-    env.set_snapshot(initial_snapshot)
+    eng_state = initial_state.get("engine", None)
+    adp_state = initial_state.get("adapter", None)
+    if isinstance(eng_state, EnvState):
+        engine.set_state(eng_state)
+    if isinstance(adp_state, dict):
+        adapter.set_state(adp_state)
     
     return {
         "best_action": int(best_action),

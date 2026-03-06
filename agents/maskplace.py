@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from envs.env import FactoryLayoutEnv
-from envs.wrappers.candidate_set import CandidateSet
+from envs.action_space import ActionSpace as CandidateSet
 
 
 @dataclass(frozen=True)
@@ -245,26 +244,25 @@ class MaskPlaceAgent:
         self.model.eval()
 
     @torch.no_grad()
-    def policy(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> torch.Tensor:
-        state = obs.get("state", None)
+    def policy(self, *, obs: dict, action_space: CandidateSet) -> torch.Tensor:
+        meta = action_space.meta if isinstance(action_space.meta, dict) else {}
+        state = meta.get("state", None)
         if not isinstance(state, torch.Tensor):
-            raise ValueError("MaskPlaceAgent requires obs['state'] (torch.Tensor)")
+            state = obs.get("state", None)
+        if not isinstance(state, torch.Tensor):
+            raise ValueError("MaskPlaceAgent requires action-space meta['state'] (or obs['state']).")
         st = state.to(device=self.device, dtype=torch.float32)
         if st.dim() == 1:
             st = st.view(1, -1)
 
         probs, _value = self.model(st)
-        pri = probs[0].to(device=env.device, dtype=torch.float32).view(-1)
+        device = action_space.xyrot.device
+        pri = probs[0].to(device=device, dtype=torch.float32).view(-1)
 
-        mask = candidates.mask.to(device=env.device, dtype=torch.bool).view(-1)
+        mask = action_space.mask.to(device=device, dtype=torch.bool).view(-1)
         if int(mask.numel()) != int(pri.numel()):
-            # Fallback to obs action_mask if candidate mask mismatches.
-            om = obs.get("action_mask", None)
-            if isinstance(om, torch.Tensor) and int(om.numel()) == int(pri.numel()):
-                mask = om.to(device=env.device, dtype=torch.bool).view(-1)
-            else:
-                # last resort: no masking
-                mask = torch.ones_like(pri, dtype=torch.bool, device=env.device)
+            # last resort: no masking
+            mask = torch.ones_like(pri, dtype=torch.bool, device=device)
 
         pri = pri.masked_fill(~mask, 0.0)
         s = float(pri.sum().item())
@@ -273,18 +271,20 @@ class MaskPlaceAgent:
         return pri
 
     @torch.no_grad()
-    def select_action(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> int:
-        pri = self.policy(env=env, obs=obs, candidates=candidates)
+    def select_action(self, *, obs: dict, action_space: CandidateSet) -> int:
+        pri = self.policy(obs=obs, action_space=action_space)
         if pri.numel() == 0:
             return 0
         return int(torch.argmax(pri).item())
 
     @torch.no_grad()
-    def value(self, *, env: FactoryLayoutEnv, obs: dict, candidates: CandidateSet) -> float:
-        state = obs.get("state", None)
+    def value(self, *, obs: dict, action_space: CandidateSet) -> float:
+        meta = action_space.meta if isinstance(action_space.meta, dict) else {}
+        state = meta.get("state", None)
         if not isinstance(state, torch.Tensor):
-            # state 없으면 heuristic: 현재 상태의 예상 최종 reward
-            return env.terminal_reward()
+            state = obs.get("state", None)
+        if not isinstance(state, torch.Tensor):
+            return 0.0
         st = state.to(device=self.device, dtype=torch.float32)
         if st.dim() == 1:
             st = st.view(1, -1)

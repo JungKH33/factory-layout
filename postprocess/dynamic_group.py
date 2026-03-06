@@ -23,6 +23,8 @@ import torch
 import torch.nn.functional as F
 from collections import deque
 
+from envs.action import EnvAction
+
 
 @dataclass
 class DynamicGroup:
@@ -82,7 +84,7 @@ class DynamicGroupGenerator:
         self.device = env.device
         
         # 유효 영역 (배치 가능한 셀)
-        self._valid = ~(env._occ_invalid | env._static_invalid)
+        self._valid = ~(env.get_maps().occ_invalid | env.get_maps().static_invalid)
     
     def generate(
         self,
@@ -337,10 +339,10 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
     import numpy as np
-    from envs.json_loader import load_env
+    from envs.env_loader import load_env
     
     # 1. env 로드 및 일부 그룹 배치
-    config_path = "env_configs/clearance_03.json"
+    config_path = "envs/env_configs/clearance_03.json"
     print(f"[1] Loading: {config_path}")
     loaded = load_env(config_path)
     env = loaded.env
@@ -348,8 +350,8 @@ if __name__ == "__main__":
     
     H, W = env.grid_height, env.grid_width
     print(f"    Grid: {W}x{H}")
-    print(f"    Groups: {list(env.groups.keys())}")
-    print(f"    Remaining: {env.remaining}")
+    print(f"    Groups: {list(env.group_specs.keys())}")
+    print(f"    Remaining: {env.get_state().remaining}")
     
     # 일부 그룹 배치 (A, B, C)
     print("\n[2] Placing some groups...")
@@ -360,12 +362,14 @@ if __name__ == "__main__":
     ]
     
     for gid, x, y, rot in placements:
-        if gid in env.remaining:
-            obs, reward, terminated, truncated, info = env.step_place(x=x, y=y, rot=rot)
+        if gid in env.get_state().remaining:
+            obs, reward, terminated, truncated, info = env.step_action(
+                EnvAction(x=int(x), y=int(y), rot=int(rot))
+            )
             print(f"    Placed {gid} at ({x}, {y}, rot={rot}) - reason: {info.get('reason')}")
     
-    print(f"    Placed: {list(env.placed)}")
-    print(f"    Remaining: {env.remaining}")
+    print(f"    Placed: {list(env.get_state().placed)}")
+    print(f"    Remaining: {env.get_state().remaining}")
     
     # 3. 동적 그룹 생성
     print("\n[3] Generating dynamic groups...")
@@ -423,8 +427,8 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(2, 2, figsize=(14, 12))
     
     current_valid = generator._valid.cpu().numpy()
-    static_invalid = env._static_invalid.cpu().numpy()
-    occ_invalid = env._occ_invalid.cpu().numpy()
+    static_invalid = env.get_maps().static_invalid.cpu().numpy()
+    occ_invalid = env.get_maps().occ_invalid.cpu().numpy()
     
     # --- (1) Env State ---
     ax1 = axes[0, 0]
@@ -434,14 +438,15 @@ if __name__ == "__main__":
     env_img[occ_invalid] = [0.8, 0.3, 0.3]
     
     ax1.imshow(env_img, origin='lower', aspect='equal')
-    ax1.set_title(f'(1) Env State (placed: {list(env.placed)})')
+    ax1.set_title(f'(1) Env State (placed: {list(env.get_state().placed)})')
     ax1.set_xlabel('X')
     ax1.set_ylabel('Y')
     
-    for gid in env.placed:
-        if gid in env.positions:
-            x_bl, y_bl, rot = env.positions[gid]
-            grp = env.groups[gid]
+    for gid in env.get_state().placed:
+        p = env.get_state().placements.get(gid)
+        if p is not None:
+            x_bl, y_bl, rot = p.pose()
+            grp = env.group_specs[gid]
             if rot == 0:
                 gw, gh = grp.width, grp.height
             else:
@@ -580,10 +585,11 @@ if __name__ == "__main__":
             ax4.add_patch(rect)
     
     # 배치된 그룹 레이블
-    for gid in env.placed:
-        if gid in env.positions:
-            x_bl, y_bl, rot = env.positions[gid]
-            grp = env.groups[gid]
+    for gid in env.get_state().placed:
+        p = env.get_state().placements.get(gid)
+        if p is not None:
+            x_bl, y_bl, rot = p.pose()
+            grp = env.group_specs[gid]
             if rot == 0:
                 gw, gh = grp.width, grp.height
             else:

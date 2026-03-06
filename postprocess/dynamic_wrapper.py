@@ -1,6 +1,6 @@
 """Dynamic Storage Wrapper for inference pipeline.
 
-DynamicStorageEnv를 GreedyWrapperV3Env와 유사한 인터페이스로 감싸서
+DynamicStorageEnv를 GreedyV3DecisionAdapter와 유사한 인터페이스로 감싸서
 기존 inference 파이프라인 (Agent, MCTS 등)과 호환되도록 합니다.
 
 사용법:
@@ -24,14 +24,15 @@ import gymnasium as gym
 import torch
 
 from .dynamic_env import DynamicStorageEnv, PlacementResult
+from envs.action_space import ActionSpace as CandidateSet
 
 
 class DynamicStorageWrapper(gym.Env):
     """DynamicStorageEnv용 Top-K Wrapper.
     
-    GreedyWrapperV3Env와 유사한 인터페이스:
+    GreedyV3DecisionAdapter와 유사한 인터페이스:
     - Action space: Discrete(k)
-    - Observation: {"action_mask": [k], "action_xyrot": [k, 3]}
+    - Observation: dynamic env base observation (no action-space fields)
     - cost 기반으로 top-k 후보 선택
     """
     
@@ -67,8 +68,14 @@ class DynamicStorageWrapper(gym.Env):
     @property
     def device(self) -> torch.device:
         return self.dynamic_env.device
+
+    def current_gid(self) -> Optional[str]:
+        """현재 배치 대상 그룹 gid."""
+        if self.dynamic_env.config is None:
+            return None
+        return str(self.dynamic_env.config.gid)
     
-    # ========== Candidate Generation ==========
+    # ========== Action-Space Generation ==========
     
     def create_mask(self) -> torch.Tensor:
         """유효한 action에서 top-k 후보 생성 (cost 기반 정렬)."""
@@ -82,16 +89,16 @@ class DynamicStorageWrapper(gym.Env):
             return torch.zeros(self.k, dtype=torch.bool, device=self.device)
         
         # 각 유효 action의 world 좌표 수집
-        candidates: List[Tuple[int, int, int, int]] = []  # (action_idx, world_x, world_y, rot)
+        action_space: List[Tuple[int, int, int, int]] = []  # (action_idx, world_x, world_y, rot)
         
         for idx in valid_indices.tolist():
             gx, gy, rot = self.dynamic_env.decode_action(int(idx))
             wx, wy = self.dynamic_env.grid_to_world(gx, gy)
-            candidates.append((int(idx), wx, wy, rot))
+            action_space.append((int(idx), wx, wy, rot))
         
         # cost 계산 (rot별로 분리)
         candidates_by_rot: Dict[int, List[Tuple[int, int, int]]] = {}
-        for action_idx, wx, wy, rot in candidates:
+        for action_idx, wx, wy, rot in action_space:
             if rot not in candidates_by_rot:
                 candidates_by_rot[rot] = []
             candidates_by_rot[rot].append((action_idx, wx, wy))
@@ -130,30 +137,36 @@ class DynamicStorageWrapper(gym.Env):
     
     # ========== Observation ==========
     
-    def _build_obs(self) -> Dict[str, Any]:
-        """Observation 빌드."""
-        assert self.mask is not None
-        assert self.action_xyrot is not None
-        
-        # base obs (action_mask 제외)
-        base_obs = self.dynamic_env._build_obs()
-        base_obs.pop("action_mask", None)  # wrapper의 mask 사용
-        
-        obs = {
-            "action_mask": self.mask,
-            "action_xyrot": self.action_xyrot,
-        }
-        obs.update(base_obs)
-        return obs
+    def build_action_space(self) -> CandidateSet:
+        """Build action-space from current dynamic env state."""
+        self.mask = self.create_mask()
+        if not isinstance(self.mask, torch.Tensor):
+            raise ValueError("create_mask() must return torch.Tensor")
+        if not isinstance(self.action_xyrot, torch.Tensor):
+            raise ValueError("action_xyrot must be torch.Tensor after create_mask()")
+        mask_t = self.mask.to(dtype=torch.bool, device=self.device).view(-1)
+        xyrot_t = self.action_xyrot.to(dtype=torch.long, device=self.device)
+        if xyrot_t.ndim != 2 or int(xyrot_t.shape[1]) != 3:
+            raise ValueError(f"action_xyrot must have shape [N,3], got {tuple(xyrot_t.shape)}")
+        if int(xyrot_t.shape[0]) != int(mask_t.shape[0]):
+            raise ValueError(
+                f"action-space size mismatch: xyrot={int(xyrot_t.shape[0])}, mask={int(mask_t.shape[0])}"
+            )
+        return CandidateSet(xyrot=xyrot_t, mask=mask_t, gid=self.current_gid())
     
     # ========== Action Decode ==========
     
-    def decode_action(self, action: int) -> Tuple[float, float, int, int, int]:
+    def decode_action(
+        self,
+        action: int,
+        action_space: Optional[CandidateSet] = None,
+    ) -> Tuple[float, float, int, int, int]:
         """action (0~k-1) → (x_bl, y_bl, rot, 0, action).
         
         Returns:
-            (x_bl, y_bl, rot, 0, cand_idx)
+            (x_bl, y_bl, rot, 0, action_idx)
         """
+        del action_space
         a = int(action)
         if self.action_xyrot is None or a < 0 or a >= self.k:
             return 0.0, 0.0, 0, 0, 0
@@ -165,22 +178,28 @@ class DynamicStorageWrapper(gym.Env):
     
     def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None):
         """환경 리셋."""
-        obs, info = self.dynamic_env.reset(seed=seed, options=options)
-        self.mask = self.create_mask()
-        return self._build_obs(), info
+        _obs, info = self.dynamic_env.reset(seed=seed, options=options)
+        self.action_xyrot = None
+        self.mask = None
+        return self.build_observation(), info
+
+    def build_observation(self) -> Dict[str, Any]:
+        """Build policy observation only (no action-space fields)."""
+        base_obs = dict(self.dynamic_env._build_obs())
+        base_obs.pop("action_mask", None)
+        base_obs.pop("action_xyrot", None)
+        return base_obs
     
     def step(self, action: int):
         """Step 실행.
         
         action은 0 ~ k-1 인덱스.
         """
-        assert self.mask is not None
-        
-        x, y, rot, _, cand_idx = self.decode_action(int(action))
+        x, y, rot, _, action_idx = self.decode_action(int(action))
         
         # 유효하지 않은 action 체크
-        if cand_idx >= self.k or not self.mask[cand_idx]:
-            return self._build_obs(), -1.0, False, False, {"reason": "invalid_action"}
+        if self.mask is None or action_idx >= self.k or not bool(self.mask[action_idx].item()):
+            return self.build_observation(), -1.0, False, False, {"reason": "invalid_action"}
         
         # dynamic_env의 action으로 변환
         gx = int(x) // self.dynamic_env.stride_x
@@ -188,20 +207,15 @@ class DynamicStorageWrapper(gym.Env):
         dynamic_action = self.dynamic_env.encode_action(gx, gy, rot)
         
         # step 실행
-        obs, reward, terminated, truncated, info = self.dynamic_env.step(dynamic_action)
-        
-        # 새 mask 생성 (terminated 아닌 경우)
-        if not (terminated or truncated):
-            self.mask = self.create_mask()
-            return self._build_obs(), reward, terminated, truncated, info
-        
-        return obs, reward, terminated, truncated, info
+        _obs, reward, terminated, truncated, info = self.dynamic_env.step(dynamic_action)
+
+        return self.build_observation(), reward, terminated, truncated, info
     
-    # ========== Snapshot (MCTS 호환) ==========
+    # ========== State Copy (MCTS 호환) ==========
     
-    def get_snapshot(self) -> Dict[str, Any]:
+    def get_state_copy(self) -> Dict[str, Any]:
         """현재 상태 저장."""
-        snap = self.dynamic_env.get_snapshot()
+        snap = self.dynamic_env.get_state_copy()
         snap["wrapper_rng_state"] = self._rng.getstate()
         if self.action_xyrot is not None:
             snap["action_xyrot"] = self.action_xyrot.clone()
@@ -213,24 +227,24 @@ class DynamicStorageWrapper(gym.Env):
             snap["mask"] = None
         return snap
     
-    def set_snapshot(self, snapshot: Dict[str, Any]) -> None:
+    def set_state(self, state: Dict[str, Any]) -> None:
         """상태 복원."""
-        self.dynamic_env.set_snapshot(snapshot)
+        self.dynamic_env.set_state(state)
         
-        rs = snapshot.get("wrapper_rng_state", None)
+        rs = state.get("wrapper_rng_state", None)
         if rs is not None:
             try:
                 self._rng.setstate(rs)
             except Exception:
                 pass
         
-        ax = snapshot.get("action_xyrot", None)
+        ax = state.get("action_xyrot", None)
         if isinstance(ax, torch.Tensor):
             self.action_xyrot = ax.to(device=self.device, dtype=torch.long).clone()
         else:
             self.action_xyrot = None
         
-        m = snapshot.get("mask", None)
+        m = state.get("mask", None)
         if isinstance(m, torch.Tensor):
             self.mask = m.to(device=self.device, dtype=torch.bool).clone()
         else:

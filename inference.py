@@ -6,8 +6,8 @@ from pathlib import Path
 import time
 import torch
 
-from envs.json_loader import load_env
-from envs.visualizer import plot_layout, save_layout, browse_steps, StepFrame
+from envs.env_loader import load_env
+from envs.env_visualizer import plot_layout, save_layout, browse_steps, StepFrame
 from postprocess import RoutePlanner
 
 from pipeline import DecisionPipeline
@@ -15,20 +15,21 @@ from search.beam import BeamConfig, BeamSearch
 from search.mcts import MCTSConfig, MCTSSearch
 
 from agents.greedy import GreedyAgent
+from ordering_agents import DifficultyOrderingAgent
 from agents.alphachip.agent import AlphaChipAgent
 from agents.maskplace import MaskPlaceAgent
 
-from envs.wrappers.greedy import GreedyWrapperEnv
-from envs.wrappers.greedyv2 import GreedyWrapperV2Env
-from envs.wrappers.greedyv3 import GreedyWrapperV3Env
+from decision_adapters.greedy import GreedyDecisionAdapter
+from decision_adapters.greedyv2 import GreedyV2DecisionAdapter
+from decision_adapters.greedyv3 import GreedyV3DecisionAdapter
 
-from envs.wrappers.alphachip import AlphaChipWrapperEnv
-from envs.wrappers.maskplace import MaskPlaceWrapperEnv
-from envs.wrappers.candidate_set import CandidateSet
+from decision_adapters.alphachip import AlphaChipDecisionAdapter
+from decision_adapters.maskplace import MaskPlaceDecisionAdapter
+from envs.action_space import ActionSpace as CandidateSet
 
 
 # --- config (module-level constants, keep simple) ---
-ENV_JSON: str = "env_configs/basic_01.json"
+ENV_JSON: str = "envs/env_configs/basic_01.json"
 #ENV_JSON: str = "preprocess/조립.json"
 WRAPPER_MODE: str = "greedyv3"  # "greedy" | "alphachip" | "maskplace"
 AGENT_MODE: str = "greedy"  # "greedy" | "alphachip" | "maskplace"
@@ -41,6 +42,7 @@ TOPK_QUANT_STEP: float = 10.0
 ALPHACHIP_GRID: int = 128
 
 SEARCH_MODE: str = "mcts"  # "none" | "mcts"
+ORDERING_MODE: str = "none"  # "none" | "difficulty"
 MCTS_SIMS: int = 1000
 MCTS_ROLLOUT_ENABLED: bool = True
 ROLLOUT_DEPTH: int = 10
@@ -73,16 +75,14 @@ def main() -> None:
     engine.log = True
 
     if WRAPPER_MODE == "greedy":
-        env = GreedyWrapperEnv(
-            engine=engine,
+        adapter = GreedyDecisionAdapter(
             k=TOPK_K,
             scan_step=TOPK_SCAN_STEP,
             quant_step=TOPK_QUANT_STEP,
             random_seed=5,
         )
     elif WRAPPER_MODE == "greedyv2":
-        env = GreedyWrapperV2Env(
-            engine=engine,
+        adapter = GreedyV2DecisionAdapter(
             k=TOPK_K,
             scan_step=TOPK_SCAN_STEP,
             quant_step=TOPK_QUANT_STEP,
@@ -90,8 +90,7 @@ def main() -> None:
         )
 
     elif WRAPPER_MODE == "greedyv3":
-        env = GreedyWrapperV3Env(
-            engine=engine,
+        adapter = GreedyV3DecisionAdapter(
             quant_step=TOPK_QUANT_STEP,
             k=TOPK_K,
             oversample_factor=2,
@@ -100,10 +99,10 @@ def main() -> None:
         )
 
     elif WRAPPER_MODE == "alphachip":
-        env = AlphaChipWrapperEnv(engine=engine, coarse_grid=int(ALPHACHIP_GRID), rot=0)
+        adapter = AlphaChipDecisionAdapter(coarse_grid=int(ALPHACHIP_GRID), rot=0)
     elif WRAPPER_MODE == "maskplace":
         # Defaults are fixed here (per request): grid=224, rot=0, soft_coefficient=1.0
-        env = MaskPlaceWrapperEnv(engine=engine, grid=224, rot=0, soft_coefficient=1.0)
+        adapter = MaskPlaceDecisionAdapter(grid=224, rot=0, soft_coefficient=1.0)
     else:
         raise ValueError(f"Unknown WRAPPER_MODE={WRAPPER_MODE!r} (expected 'greedy'|'alphachip'|'maskplace')")
 
@@ -152,15 +151,21 @@ def main() -> None:
     else:
         raise ValueError(f"Unknown SEARCH_MODE={SEARCH_MODE!r} (expected 'none'|'mcts'|'beam')")
 
-    pipe = DecisionPipeline(agent=agent, search=search)
+    if ORDERING_MODE == "none":
+        ordering_agent = None
+    elif ORDERING_MODE == "difficulty":
+        ordering_agent = DifficultyOrderingAgent()
+    else:
+        raise ValueError(f"Unknown ORDERING_MODE={ORDERING_MODE!r} (expected 'none'|'difficulty')")
 
-    obs, _info = env.reset(options=loaded.reset_kwargs)
+    pipe = DecisionPipeline(agent=agent, adapter=adapter, search=search, ordering_agent=ordering_agent)
+    pipe.bind(engine=engine)
+    obs_env, _info = engine.reset(options=loaded.reset_kwargs)
     terminated = truncated = False
     total_reward = 0.0
 
     start = time.perf_counter()
     step = 0
-    last_candidates: CandidateSet | None = None
     frames: list[StepFrame] = []
 
     print("[inference]")
@@ -168,60 +173,67 @@ def main() -> None:
 
     while not (terminated or truncated):
         step += 1
-        next_gid = env.engine.remaining[0] if env.engine.remaining else None
+        next_gid = engine.get_state().remaining[0] if engine.get_state().remaining else None
 
-        # For visualization: Greedy(TopK) wrapper provides action_xyrot; alphachip can be visualized by decoding valid actions (omitted for now).
-        if isinstance(obs, dict) and ("action_mask" in obs):
-            if "action_xyrot" in obs:
-                last_candidates = CandidateSet(xyrot=obs["action_xyrot"], mask=obs["action_mask"], gid=next_gid)
-            elif WRAPPER_MODE == "maskplace":
-                # Avoid allocating all 224*224 candidates for plotting; subsample valid actions.
-                mask = obs["action_mask"].to(device=device, dtype=torch.bool).view(-1)
-                idxs = torch.where(mask)[0][:5000]
-                xy = torch.zeros((int(idxs.numel()), 3), dtype=torch.long, device=device)
-                for t, ai in enumerate(idxs.tolist()):
-                    x_bl, y_bl, rot, _i, _j = env.decode_action(int(ai))  # type: ignore[attr-defined]
-                    xy[t, 0] = int(x_bl)
-                    xy[t, 1] = int(y_bl)
-                    xy[t, 2] = int(rot)
-                last_candidates = CandidateSet(
-                    xyrot=xy,
-                    mask=torch.ones((xy.shape[0],), dtype=torch.bool, device=device),
-                    gid=next_gid,
-                    meta={"subsampled": True},
-                )
-            else:
-                last_candidates = None
+        state = engine.get_state().copy()
+        action = None
+        dbg: dict[str, object] = {}
+        try:
+            action, dbg = pipe.decide()
+            obs_env_next, reward, terminated, truncated, info = engine.step_action(action)
+        except ValueError as e:
+            if str(e) != "no_valid_actions":
+                raise
+            reward = float(engine.failure_penalty())
+            terminated = False
+            truncated = True
+            info = {"reason": "no_valid_actions"}
+            obs_env_next = None
 
-        # Build candidates + action first so we can snapshot and visualize pre-step policy.
-        action, dbg_act, candidates = pipe.act(env=env, obs=obs)
-        snap = env.get_snapshot()
-        scores = agent.policy(env=env.engine, obs=obs, candidates=candidates).detach().to(device="cpu").numpy()
-        v = float(agent.value(env=env.engine, obs=obs, candidates=candidates))
-        cost = float(env.engine.cost())
+        action_space_obj = dbg.get("action_space")
+        scores_obj = dbg.get("scores")
+        action_obj = dbg.get("action_index")
+        value_obj = dbg.get("value")
+        selected_action = None
+        if action_obj is not None:
+            try:
+                selected_action = int(action_obj)
+            except Exception:
+                selected_action = None
+        value = None
+        if value_obj is not None:
+            try:
+                value = float(value_obj)
+            except Exception:
+                value = None
+
         frames.append(
             StepFrame(
-                snapshot=snap,
-                candidates=candidates,
-                scores=scores,
-                selected_action=int(action),
-                value=float(v),
-                cost=float(cost),
+                state=state,
+                cost=float(engine.cost()),
                 step_idx=int(step),
+                action_space=action_space_obj if isinstance(action_space_obj, CandidateSet) else None,
+                scores=scores_obj if hasattr(scores_obj, "shape") else None,
+                selected_action=selected_action,
+                value=value,
             )
         )
 
-        obs, reward, terminated, truncated, info = env.step(int(action))
-        dbg = dict(dbg_act)
-        dbg["candidates"] = candidates
+        obs_env = obs_env_next
         total_reward += float(reward)
-        print(f"[step] {step} next_gid={next_gid} dbg={dbg}")
+        if action is None:
+            print(f"[step] {step} next_gid={next_gid} search={SEARCH_MODE} reason=no_valid_actions")
+        else:
+            print(
+                f"[step] {step} next_gid={next_gid} search={dbg.get('search', SEARCH_MODE)} "
+                f"action=({int(action.x)},{int(action.y)},{int(action.rot)})"
+            )
 
         if terminated or truncated:
             reason = info.get("reason", None)
             print(
                 f"[env] end: terminated={terminated} truncated={truncated} "
-                f"step={step} placed={len(env.engine.placed)} cost={env.engine.total_cost():.3f} reason={reason}"
+                f"step={step} placed={len(engine.get_state().placed)} cost={engine.total_cost():.3f} reason={reason}"
             )
 
     end = time.perf_counter()
@@ -243,48 +255,48 @@ def main() -> None:
 
     # Interactive slide viewer (←/→): policy scatter colored by agent.policy scores.
     if frames:
-        # IMPORTANT: browse_steps restores snapshots internally. Save & restore the final state
+        # IMPORTANT: browse_steps restores state internally. Save & restore the final state
         # so that the final plot/save below always reflects the true end layout.
-        final_snap = env.get_snapshot()
-        browse_steps(env, frames=frames, title="Inference browser (←/→ to navigate, q to quit)")
-        env.set_snapshot(final_snap)
+        final_state = engine.get_state().copy()
+        browse_steps(adapter, frames=frames, title="Inference browser (←/→ to navigate, q to quit)")
+        engine.set_state(final_state)  # type: ignore[arg-type]
 
     # Route planning
-    # planner = RoutePlanner(env.engine, algorithm="astar")
+    # planner = RoutePlanner(engine, algorithm="astar")
     # routes = planner.plan_all()
 
     # Preview before saving (interactive; close the window to continue).
-    plot_layout(env, candidate_set=None, routes= None)
+    plot_layout(adapter, action_space=None, routes= None)
 
     save_layout(
-        env,
+        adapter,
         show_masks=SHOW_MASKS,
         show_flow=SHOW_FLOW,
         show_score=SHOW_SCORE,
         show_zones=False,
-        candidate_set=None,
+        action_space=None,
         save_path=str(out_path),
     )
     print(f"saved_layout={out_path}")
     
     # Save placement JSON
     placement_path = out_dir / f"{ts}_{AGENT_MODE}_{WRAPPER_MODE}_{SEARCH_MODE}.json"
-    env.engine.save_placement(str(placement_path))
+    engine.save_placement(str(placement_path))
     print(f"saved_placement={placement_path}")
 
     # Save top-K results if tracking was enabled
     if search is not None and hasattr(search, "top_tracker") and search.top_tracker is not None:
         top_results = search.top_tracker.get_results()
         for i, result in enumerate(top_results):
-            env.set_snapshot(result.snapshot)
+            engine.set_state(result.engine_state)
             top_path = out_dir / f"{ts}_top{i+1}_cost{result.cost:.1f}.png"
             save_layout(
-                env,
+                adapter,
                 show_masks=SHOW_MASKS,
                 show_flow=SHOW_FLOW,
                 show_score=SHOW_SCORE,
                 show_zones=False,
-                candidate_set=None,
+                action_space=None,
                 save_path=str(top_path),
             )
             print(f"saved_top_{i+1}={top_path}")
@@ -292,4 +304,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

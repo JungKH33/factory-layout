@@ -6,8 +6,10 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from envs.wrappers.base import BaseWrapper
-from envs.wrappers.candidate_set import CandidateSet
+from envs.env import FactoryLayoutEnv
+from envs.state import EnvState
+from decision_adapters.base import BaseDecisionAdapter
+from envs.action_space import ActionSpace as CandidateSet
 from agents.base import Agent
 from search.base import BaseSearch, SearchProgress, SearchResult, TopKTracker
 
@@ -22,7 +24,7 @@ class BeamConfig:
 
 
 class BeamSearch(BaseSearch):
-    """Beam search over wrapper env (Discrete + action_mask + snapshot)."""
+    """Beam search over decision adapter (Discrete + action_mask + env state)."""
 
     def __init__(self, *, config: BeamConfig):
         super().__init__()
@@ -38,70 +40,63 @@ class BeamSearch(BaseSearch):
     def select(
         self,
         *,
-        env: BaseWrapper,
         obs: dict,
         agent: Agent,
-        root_candidates: CandidateSet,
+        root_action_space: CandidateSet,
     ) -> int:
-        root_snapshot = env.get_snapshot()
+        adapter = self.adapter
+        if adapter is None:
+            raise ValueError("BeamSearch.adapter is not set. Call search.set_adapter(...).")
+        engine = getattr(adapter, "engine", None)
+        if engine is None:
+            raise ValueError("BeamSearch requires adapter.engine. Bind adapter to env before search.")
+        root_state = self._get_engine_state(engine=engine, adapter=adapter)
         total_depth = int(self.config.depth)
 
         # Only compute numpy arrays if callback is set (avoid overhead when not needed)
         has_callback = self._progress_callback is not None
         if has_callback:
-            n_actions = int(root_candidates.mask.shape[0])
-            mask_np = root_candidates.mask.detach().cpu().numpy().astype(bool)
+            n_actions = int(root_action_space.mask.shape[0])
+            mask_np = root_action_space.mask.detach().cpu().numpy().astype(bool)
             # Track scores for each root action (for progress reporting)
             root_action_scores: Dict[int, float] = {}
         else:
             root_action_scores = None  # type: ignore
 
-        # Each beam item:
-        # (cum_reward, first_action, snapshot, obs_at_snapshot)
-        beams: List[Tuple[float, int, Dict[str, object], dict]] = [(0.0, -1, root_snapshot, obs)]
+        # Each beam item: (cum_reward, first_action, engine_state)
+        beams: List[Tuple[float, int, EnvState]] = [(0.0, -1, root_state)]
 
         for depth in range(total_depth):
-            new_beams: List[Tuple[float, int, Dict[str, object], dict]] = []
-            for cum_reward, first_action, snap, obs_node in beams:
-                env.set_snapshot(snap)
+            new_beams: List[Tuple[float, int, EnvState]] = []
+            for cum_reward, first_action, state in beams:
+                self._set_engine_state(engine=engine, adapter=adapter, engine_state=state)
 
-                # Use provided root candidates at depth=0 on root node to avoid rebuild mismatch.
-                if depth == 0 and snap is root_snapshot:
-                    candidates = root_candidates
+                # Use provided root action_space at depth=0 on root node to avoid rebuild mismatch.
+                if depth == 0 and state is root_state:
+                    obs_node = obs
+                    action_space = root_action_space
                 else:
-                    # If wrapper-specific keys are missing (e.g. env returned core obs after truncated),
-                    # treat this node as a leaf and do not expand further.
-                    if not (isinstance(obs_node, dict) and ("action_mask" in obs_node)):
-                        # Track terminal state
-                        self._track_if_terminal(env, cum_reward, is_terminal=True)
-                        new_beams.append(
-                            (
-                                cum_reward,
-                                first_action if first_action >= 0 else 0,
-                                env.get_snapshot(),
-                                obs_node,
-                            )
-                        )
-                        continue
-                    candidates = self._candidates_from_obs(env, obs_node)
-                valid_mask = candidates.mask
+                    obs_node = adapter.build_observation()
+                    action_space = adapter.build_action_space()
+                valid_mask = action_space.mask
                 valid_n = int(valid_mask.to(torch.int64).sum().item())
                 if valid_n <= 0:
                     # Track terminal state (no valid actions = terminal)
-                    self._track_if_terminal(env, cum_reward, is_terminal=True)
+                    self._track_if_terminal(engine=engine, adapter=adapter, cum_reward=cum_reward, is_terminal=True)
                     new_beams.append(
                         (
                             cum_reward,
                             first_action if first_action >= 0 else 0,
-                            env.get_snapshot(),
-                            obs_node,
+                            self._get_engine_state(engine=engine, adapter=adapter),
                         )
                     )
                     continue
 
                 # IMPORTANT: policy must be computed from the obs corresponding to this node state.
                 priors = (
-                    agent.policy(env=env.engine, obs=obs_node, candidates=candidates).to(dtype=torch.float32, device=env.device)
+                    agent.policy(obs=obs_node, action_space=action_space).to(
+                        dtype=torch.float32, device=adapter.device
+                    )
                     .view(-1)
                 )
                 priors = priors.masked_fill(~valid_mask, float("-inf"))
@@ -117,16 +112,21 @@ class BeamSearch(BaseSearch):
                     a = int(a)
                     if not bool(valid_mask[a].item()):
                         continue
-                    env.set_snapshot(snap)
-                    obs2, reward, terminated, truncated, _info = env.step(int(a))
+                    self._set_engine_state(engine=engine, adapter=adapter, engine_state=state)
+                    _obs2, reward, terminated, truncated, _info = self._apply_action_index(
+                        engine=engine,
+                        adapter=adapter,
+                        action=int(a),
+                        action_space=action_space,
+                    )
 
                     new_cum = float(cum_reward) + float(reward)
                     root_a = a if first_action < 0 else int(first_action)
-                    new_beams.append((new_cum, root_a, env.get_snapshot(), obs2))
+                    new_beams.append((new_cum, root_a, self._get_engine_state(engine=engine, adapter=adapter)))
 
                     # Track completed placements
                     if terminated or truncated:
-                        self._track_if_terminal(env, new_cum, is_terminal=True)
+                        self._track_if_terminal(engine=engine, adapter=adapter, cum_reward=new_cum, is_terminal=True)
 
             if not new_beams:
                 break
@@ -137,19 +137,66 @@ class BeamSearch(BaseSearch):
             # Emit progress (only if callback is set)
             if has_callback:
                 # Update root action scores from current beams
-                for cum_reward, root_a, _, _ in beams:
+                for cum_reward, root_a, _ in beams:
                     if root_a >= 0:
                         if root_a not in root_action_scores or cum_reward > root_action_scores[root_a]:
                             root_action_scores[root_a] = cum_reward
-                
+
                 self._emit_beam_progress(
                     depth + 1, total_depth, n_actions, mask_np, root_action_scores, beams
                 )
 
         best = beams[0][1] if beams else 0
 
-        env.set_snapshot(root_snapshot)
+        self._set_engine_state(engine=engine, adapter=adapter, engine_state=root_state)
         return int(best) if int(best) >= 0 else 0
+
+    def _get_engine_state(self, *, engine: FactoryLayoutEnv, adapter: BaseDecisionAdapter) -> EnvState:
+        """Snapshot current engine state.
+
+        The base implementation only copies the engine state.  Adapter state
+        (mask, action_xyrot, etc.) is intentionally NOT included – it is
+        always rebuilt via ``adapter.build_action_space()`` after restoration.
+        Subclasses may override to include adapter state if needed.
+        """
+        return engine.get_state().copy()
+
+    def _set_engine_state(
+        self,
+        *,
+        engine: FactoryLayoutEnv,
+        adapter: BaseDecisionAdapter,
+        engine_state: EnvState,
+    ) -> None:
+        """Restore engine to a previously captured state.
+
+        Only the engine state is restored.  Adapter state is NOT restored
+        here – callers must call ``adapter.build_action_space()`` afterwards
+        if they need a consistent adapter.  Subclasses may override to
+        include adapter restoration.
+        """
+        engine.set_state(engine_state)
+
+    def _apply_action_index(
+        self,
+        *,
+        engine: FactoryLayoutEnv,
+        adapter: BaseDecisionAdapter,
+        action: int,
+        action_space: CandidateSet,
+    ):
+        try:
+            placement = adapter.decode_action(int(action), action_space)
+        except IndexError:
+            obs_out = adapter.build_observation()
+            return obs_out, float(engine.failure_penalty()), False, True, {"reason": "action_out_of_range"}
+        except ValueError as e:
+            obs_out = adapter.build_observation()
+            reason = "no_valid_actions" if str(e) == "no_valid_actions" else "masked_action"
+            return obs_out, float(engine.failure_penalty()), False, True, {"reason": reason}
+        _obs_env, reward, terminated, truncated, info = engine.step_action(placement)
+        obs2 = adapter.build_observation()
+        return obs2, float(reward), bool(terminated), bool(truncated), info
 
     def _emit_beam_progress(
         self,
@@ -158,14 +205,14 @@ class BeamSearch(BaseSearch):
         n_actions: int,
         mask: np.ndarray,
         root_action_scores: Dict[int, float],
-        beams: List[Tuple[float, int, Dict[str, object], dict]],
+        beams: List[Tuple[float, int, EnvState]],
     ) -> None:
         """Emit progress for beam search."""
         # visits: count how many beams have each root action
         visits = np.zeros(n_actions, dtype=np.int32)
         values = np.zeros(n_actions, dtype=np.float32)
         
-        for cum_reward, root_a, _, _ in beams:
+        for cum_reward, root_a, _ in beams:
             if 0 <= root_a < n_actions:
                 visits[root_a] += 1
                 values[root_a] = max(values[root_a], cum_reward)
@@ -191,72 +238,59 @@ class BeamSearch(BaseSearch):
         )
         self._emit_progress(progress)
 
-    def _track_if_terminal(self, env: BaseWrapper, cum_reward: float, *, is_terminal: bool) -> None:
+    def _track_if_terminal(
+        self,
+        *,
+        engine: FactoryLayoutEnv,
+        adapter: BaseDecisionAdapter,
+        cum_reward: float,
+        is_terminal: bool,
+    ) -> None:
         """Track terminal state if tracking is enabled."""
         if self.top_tracker is None or not is_terminal:
             return
-        cost = env.engine.total_cost()
-        positions = {str(gid): pos for gid, pos in env.engine.positions.items()}
+        cost = engine.total_cost()
+        positions = {str(gid): p.pose() for gid, p in engine.get_state().placements.items()}
         self.top_tracker.add(SearchResult(
             cost=cost,
             cum_reward=cum_reward,
             positions=positions,
-            snapshot=env.get_snapshot(),
+            engine_state=self._get_engine_state(engine=engine, adapter=adapter),
         ))
-
-    def _candidates_from_obs(self, env: BaseWrapper, obs: dict) -> CandidateSet:
-        mask = obs.get("action_mask", None)
-        if not isinstance(mask, torch.Tensor):
-            raise ValueError("BeamSearch(wrapper) requires obs['action_mask'] (torch.Tensor)")
-        mask = mask.to(dtype=torch.bool, device=env.device).view(-1)
-        A = int(mask.shape[0])
-
-        gid = env.engine.remaining[0] if env.engine.remaining else None
-        if "action_xyrot" in obs and isinstance(obs["action_xyrot"], torch.Tensor):
-            xyrot = obs["action_xyrot"].to(dtype=torch.long, device=env.device)
-            if xyrot.ndim != 2 or int(xyrot.shape[0]) != A or int(xyrot.shape[1]) != 3:
-                raise ValueError(f"obs['action_xyrot'] must have shape [A,3], got {tuple(xyrot.shape)} for A={A}")
-            return CandidateSet(xyrot=xyrot, mask=mask, gid=gid)
-
-        xyrot = torch.zeros((A, 3), dtype=torch.long, device=env.device)
-        for a in range(A):
-            x_bl, y_bl, rot, _i, _j = env.decode_action(int(a))  # type: ignore[attr-defined]
-            xyrot[a, 0] = int(x_bl)
-            xyrot[a, 1] = int(y_bl)
-            xyrot[a, 2] = int(rot)
-        return CandidateSet(xyrot=xyrot, mask=mask, gid=gid)
 
 
 if __name__ == "__main__":
     import time
 
-    from envs.json_loader import load_env
+    from envs.env_loader import load_env
     from agents.greedy import GreedyAgent
-    from envs.wrappers.greedy import GreedyWrapperEnv
+    from decision_adapters.greedy import GreedyDecisionAdapter
 
-    ENV_JSON = "env_configs/basic_01.json"
+    ENV_JSON = "envs/env_configs/basic_01.json"
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
-    env = GreedyWrapperEnv(engine=engine, k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
-    obs, _info = env.reset(options=loaded.reset_kwargs)
+    adapter = GreedyDecisionAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    obs_env, _info = engine.reset(options=loaded.reset_kwargs)
+    adapter.bind(engine)
+    obs = adapter.build_observation()
 
     agent = GreedyAgent(prior_temperature=1.0)
     search = BeamSearch(config=BeamConfig(beam_width=8, depth=3, expansion_topk=16))
+    search.set_adapter(adapter)
 
     t0 = time.perf_counter()
-    next_gid = env.engine.remaining[0] if env.engine.remaining else None
-    root_candidates = CandidateSet(xyrot=obs["action_xyrot"], mask=obs["action_mask"], gid=next_gid)
-    a = search.select(env=env, obs=obs, agent=agent, root_candidates=root_candidates)
+    root_action_space = adapter.build_action_space()
+    next_gid = root_action_space.gid
+    a = search.select(obs=obs, agent=agent, root_action_space=root_action_space)
     dt_ms = (time.perf_counter() - t0) * 1000.0
 
-    valid_n = int(root_candidates.mask.sum().item())
-    xyrot = root_candidates.xyrot[a].tolist() if int(root_candidates.xyrot.shape[0]) > 0 else [0, 0, 0]
+    valid_n = int(root_action_space.mask.sum().item())
+    xyrot = root_action_space.xyrot[a].tolist() if int(root_action_space.xyrot.shape[0]) > 0 else [0, 0, 0]
 
     print("[search.beam demo]")
     print(" env=", ENV_JSON, "device=", device, "next_gid=", next_gid)
-    print(" action=", a, "valid_candidates=", valid_n, "xyrot=", xyrot)
+    print(" action=", a, "valid_actions=", valid_n, "xyrot=", xyrot)
     print(f" elapsed_ms={dt_ms:.2f}")
-

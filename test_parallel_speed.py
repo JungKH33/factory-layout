@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
-from envs.json_loader import load_env
+from envs.env_loader import load_env
 
 
 def visualize_placeable_map_small():
@@ -73,9 +73,9 @@ def visualize_placeable_map_small():
 
 def test_placeable_conv2d(env, gid, n_iter=10):
     """conv2d로 placeable 검사 (병렬)."""
-    g = env.groups[gid]
+    g = env.group_specs[gid]
     kw, kh = int(g.width), int(g.height)
-    invalid = env._invalid.clone()
+    invalid = env.get_maps().invalid.clone()
     
     # 웜업
     for _ in range(3):
@@ -96,9 +96,9 @@ def test_placeable_conv2d(env, gid, n_iter=10):
 
 def test_placeable_loop(env, gid, n_samples=1000):
     """loop로 placeable 검사 (순차) - n_samples개 위치만 검사."""
-    g = env.groups[gid]
+    g = env.group_specs[gid]
     kw, kh = int(g.width), int(g.height)
-    invalid = env._invalid
+    invalid = env.get_maps().invalid
     H, W = invalid.shape
     
     # 검사할 위치들 (랜덤 샘플)
@@ -120,9 +120,9 @@ def test_placeable_loop(env, gid, n_samples=1000):
 
 def test_placeable_loop_all(env, gid):
     """loop로 전체 placeable 검사 (순차)."""
-    g = env.groups[gid]
+    g = env.group_specs[gid]
     kw, kh = int(g.width), int(g.height)
-    invalid = env._invalid
+    invalid = env.get_maps().invalid
     H, W = invalid.shape
     max_y, max_x = H - kh + 1, W - kw + 1
     total = max_y * max_x
@@ -187,9 +187,9 @@ def test_estimate_loop(env, gid, n_calls=100):
 
 def test_placeable_loop_device(env, gid):
     """loop로 전체 placeable 검사 (순차) - device에서 실행."""
-    g = env.groups[gid]
+    g = env.group_specs[gid]
     kw, kh = int(g.width), int(g.height)
-    invalid = env._invalid
+    invalid = env.get_maps().invalid
     H, W = invalid.shape
     max_y, max_x = H - kh + 1, W - kw + 1
     total = max_y * max_x
@@ -213,7 +213,7 @@ def test_placeable_loop_device(env, gid):
 
 
 def main():
-    ENV_JSON = "env_configs/basic_01.json"
+    ENV_JSON = "envs/env_configs/basic_01.json"
     N = 100
     
     print("=" * 60)
@@ -224,8 +224,8 @@ def main():
     loaded_cpu = load_env(ENV_JSON, device=torch.device("cpu"))
     env_cpu = loaded_cpu.env
     env_cpu.reset()
-    gid = list(env_cpu.groups.keys())[0]
-    g = env_cpu.groups[gid]
+    gid = list(env_cpu.group_specs.keys())[0]
+    g = env_cpu.group_specs[gid]
     
     print(f"\n설비: {gid}, 크기: {int(g.width)}x{int(g.height)}")
     print(f"그리드: {env_cpu.grid_width}x{env_cpu.grid_height}")
