@@ -382,20 +382,21 @@ def build_groups(
             "facility_clearance_top": int(round(cluster_UA / scale)),
         }
         
-        # Facility constraints
+        # Generic zone values.
+        zone_values: Dict[str, Any] = {}
         # storage는 height 제약 없음 (배치 가능 영역 어디든 가능)
         if "facilityHeightDouble" in main_fac and not is_storage:
-            group_data["facility_height"] = main_fac["facilityHeightDouble"]
+            zone_values["height"] = main_fac["facilityHeightDouble"]
         if "facilityWeightDouble" in main_fac:
-            group_data["facility_weight"] = main_fac["facilityWeightDouble"]
+            zone_values["weight"] = main_fac["facilityWeightDouble"]
         if main_fac.get("dry") is not None:
-            group_data["facility_dry"] = main_fac["dry"]
-        
-        # Placement area constraint: allowed_areas is a list of area IDs
+            zone_values["dry"] = main_fac["dry"]
         placeable = main_fac.get("placeableAreaIds", [])
         if isinstance(placeable, list) and len(placeable) > 0:
-            # Convert to list of strings for env compatibility
-            group_data["allowed_areas"] = [str(p) for p in placeable]
+            # placeable 제약은 == 1 형태로 사용.
+            zone_values["placeable"] = 1
+        if zone_values:
+            group_data["zone_values"] = zone_values
         
         # Meta info (for debugging, prefixed with _)
         group_data["_facility_count"] = facility_count
@@ -463,38 +464,64 @@ def build_zones(
     column_areas: List[Dict],
     scale: float,
 ) -> Dict[str, Any]:
-    """Convert area constraints to zones."""
-    # Placement areas
-    placement_areas = []
+    """Convert area constraints to zones.constraints schema."""
+    constraints: Dict[str, Any] = {}
+
+    # Placeable (== 1)
+    placeable_constraint_areas = []
     for area in placeable_areas:
-        placement_areas.append({
-            "id": area["id"],
+        placeable_constraint_areas.append({
             "rect": convert_rect(area, scale),
+            "value": 1,
         })
-    
-    # Height areas (from areaCeilings)
-    height_areas = []
+    if placeable_constraint_areas:
+        constraints["placeable"] = {
+            "dtype": "int",
+            "op": "==",
+            "areas": placeable_constraint_areas,
+        }
+
+    # Height (>=)
+    height_constraint_areas = []
     for area in area_ceilings:
-        height_areas.append({
+        height_constraint_areas.append({
             "rect": convert_rect(area, scale),
             "value": area.get("ceilingHeight", area.get("value", 0)),
         })
-    
-    # Weight areas (from areaWeights)
-    weight_areas = []
+    if height_constraint_areas:
+        constraints["height"] = {
+            "dtype": "float",
+            "op": ">=",
+            "areas": height_constraint_areas,
+        }
+
+    # Weight (>=)
+    weight_constraint_areas = []
     for area in area_weights:
-        weight_areas.append({
+        weight_constraint_areas.append({
             "rect": convert_rect(area, scale),
             "value": area.get("weight", area.get("value", 0)),
         })
-    
-    # Dry areas (from areaDry)
-    dry_areas = []
+    if weight_constraint_areas:
+        constraints["weight"] = {
+            "dtype": "float",
+            "op": ">=",
+            "areas": weight_constraint_areas,
+        }
+
+    # Dry (<=)
+    dry_constraint_areas = []
     for area in area_dry:
-        dry_areas.append({
+        dry_constraint_areas.append({
             "rect": convert_rect(area, scale),
             "value": area.get("dry", area.get("value", 0)),
         })
+    if dry_constraint_areas:
+        constraints["dry"] = {
+            "dtype": "float",
+            "op": "<=",
+            "areas": dry_constraint_areas,
+        }
     
     # Forbidden areas (from forbiddenAreas + columnAreas)
     forbidden_list = []
@@ -503,19 +530,11 @@ def build_zones(
     for area in column_areas:
         forbidden_list.append({"rect": convert_rect(area, scale)})
     
-    zones = {
-        "placement_areas": placement_areas,
-    }
-    
-    #if forbidden_list:
-        #zones["forbidden_areas"] = forbidden_list
-    if height_areas:
-        zones["height_areas"] = height_areas
-    if weight_areas:
-        zones["weight_areas"] = weight_areas
-    if dry_areas:
-        zones["dry_areas"] = dry_areas
-    
+    zones: Dict[str, Any] = {"constraints": constraints}
+
+    # if forbidden_list:
+    #     zones["forbidden_areas"] = forbidden_list
+
     return zones
 
 
@@ -754,10 +773,12 @@ def convert_sma_to_env(
         forbidden_areas, column_areas, scale
     )
     print(f"[INFO] Forbidden areas: {len(zones.get('forbidden_areas', []))}")
-    print(f"[INFO] Placement areas: {len(zones.get('placement_areas', []))}")
-    print(f"[INFO] Height areas: {len(zones.get('height_areas', []))}")
-    print(f"[INFO] Weight areas: {len(zones.get('weight_areas', []))}")
-    print(f"[INFO] Dry areas: {len(zones.get('dry_areas', []))}")
+    constraints = zones.get("constraints", {})
+    print(f"[INFO] Constraints: {len(constraints) if isinstance(constraints, dict) else 0}")
+    if isinstance(constraints, dict):
+        for cname, cfg in constraints.items():
+            areas = cfg.get("areas", []) if isinstance(cfg, dict) else []
+            print(f"  - {cname}: areas={len(areas)}")
     
     # Initial positions
     fixed_positions = data.get("fixedFacilityPositions", [])
@@ -773,9 +794,6 @@ def convert_sma_to_env(
         },
         "env": {
             "max_candidates": 70,
-            "default_weight": factory_dim.get("weight", 10.0),
-            "default_height": factory_dim.get("ceilingHeight", 10.0),
-            "default_dry": factory_dim.get("dry", 0.0),
         },
         "groups": groups,
         "flow": flow,

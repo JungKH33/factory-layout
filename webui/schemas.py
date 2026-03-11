@@ -80,10 +80,7 @@ class SessionState(BaseModel):
     
     # Zones and overlays
     forbidden_areas: List[ZoneRect] = []
-    placement_zones: List[ZoneRect] = []
-    weight_zones: List[ZoneRect] = []
-    dry_zones: List[ZoneRect] = []
-    height_zones: List[ZoneRect] = []
+    constraint_zones: Dict[str, List[ZoneRect]] = {}
     flow_edges: List[FlowEdge] = []
 
 

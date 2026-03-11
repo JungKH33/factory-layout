@@ -19,10 +19,7 @@ const settings = {
     showCandidates: true,
     showFlow: true,
     showForbidden: false,
-    showPlacementZones: false,
-    showWeightZones: false,
-    showDryZones: false,
-    showHeightZones: false,
+    showConstraintZones: false,
     showScores: true,
     showVisits: false,
     showLabels: true,
@@ -52,10 +49,7 @@ function getColors() {
             text: '#ffffff',
             flow: 'rgba(96, 165, 250, 0.6)',
             forbidden: 'rgba(255, 100, 100, 0.2)',
-            placementZone: 'rgba(30, 144, 255, 0.15)',
-            weightZone: 'rgba(31, 119, 180, 0.12)',
-            dryZone: 'rgba(44, 160, 44, 0.10)',
-            heightZone: 'rgba(127, 127, 127, 0.08)',
+            constraintZone: 'rgba(30, 144, 255, 0.15)',
         };
     }
     return {
@@ -74,10 +68,7 @@ function getColors() {
         text: '#000000',
         flow: 'rgba(31, 119, 180, 0.5)',
         forbidden: 'rgba(255, 0, 0, 0.15)',
-        placementZone: 'rgba(30, 144, 255, 0.12)',
-        weightZone: 'rgba(31, 119, 180, 0.08)',
-        dryZone: 'rgba(44, 160, 44, 0.06)',
-        heightZone: 'rgba(127, 127, 127, 0.04)',
+        constraintZone: 'rgba(30, 144, 255, 0.12)',
     };
 }
 
@@ -134,10 +125,7 @@ function setupEventListeners() {
         ['show-candidates', 'showCandidates'],
         ['show-flow', 'showFlow'],
         ['show-forbidden', 'showForbidden'],
-        ['show-placement-zones', 'showPlacementZones'],
-        ['show-weight-zones', 'showWeightZones'],
-        ['show-dry-zones', 'showDryZones'],
-        ['show-height-zones', 'showHeightZones'],
+        ['show-constraint-zones', 'showConstraintZones'],
         ['show-scores', 'showScores'],
         ['show-visits', 'showVisits'],
         ['show-labels', 'showLabels'],
@@ -799,10 +787,7 @@ function render() {
     }
     
     // Draw zones (back to front)
-    if (settings.showHeightZones) drawZones(scaleX, scaleY, currentState.height_zones, COLORS.heightZone, '#7f7f7f', 'h≤');
-    if (settings.showDryZones) drawZones(scaleX, scaleY, currentState.dry_zones, COLORS.dryZone, '#2ca02c', 'dry≥');
-    if (settings.showWeightZones) drawZones(scaleX, scaleY, currentState.weight_zones, COLORS.weightZone, '#1f77b4', 'w≤');
-    if (settings.showPlacementZones) drawZones(scaleX, scaleY, currentState.placement_zones, COLORS.placementZone, '#1e90ff', '');
+    if (settings.showConstraintZones) drawConstraintZones(scaleX, scaleY, currentState.constraint_zones, COLORS.constraintZone, '#1e90ff');
     if (settings.showForbidden) drawZones(scaleX, scaleY, currentState.forbidden_areas, COLORS.forbidden, '#d62728', '');
     
     // Draw candidates (before placed so they appear behind)
@@ -874,6 +859,13 @@ function drawZones(scaleX, scaleY, zones, fillColor, strokeColor, prefix) {
             }
         }
     });
+}
+
+function drawConstraintZones(scaleX, scaleY, constraints, fillColor, strokeColor) {
+    if (!constraints || typeof constraints !== 'object') return;
+    for (const zones of Object.values(constraints)) {
+        drawZones(scaleX, scaleY, zones, fillColor, strokeColor, '');
+    }
 }
 
 function drawFlow(scaleX, scaleY) {

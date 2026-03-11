@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple
 
 import torch
 
@@ -47,12 +47,7 @@ class StaticSpec:
     clearance_bottom_rel: int
     clearance_top_rel: int
     rotatable: bool = True
-    allowed_areas: Optional[List[str]] = None
-
-    # Map-based zone requirements (used by env zone-invalid logic).
-    facility_height: float = float("-inf")
-    facility_weight: float = float("-inf")
-    facility_dry: float = float("inf")
+    zone_values: Dict[str, Any] = field(default_factory=dict)
 
     @staticmethod
     def _norm_rot(rot: int) -> int:

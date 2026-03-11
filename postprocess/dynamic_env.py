@@ -129,8 +129,11 @@ class DynamicStorageEnv(gym.Env):
         self.stride_x = self.cell_w + self.gap_w
         self.stride_y = self.cell_h + self.gap_h
         
-        # z축 높이 맵 (천장 높이)
-        self._height_map = base_env.get_maps().height_map  # [H, W] 천장 높이
+        # z축 높이 맵 (천장 높이) - generic constraint map에서 "height" 사용
+        hmap = base_env.get_maps().constraint_maps.get("height", None)
+        if hmap is None:
+            raise ValueError("dynamic env requires zones.constraints.height map")
+        self._height_map = hmap.to(dtype=torch.float32)  # [H, W]
         
         self.H = base_env.grid_height
         self.W = base_env.grid_width

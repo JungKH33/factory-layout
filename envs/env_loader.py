@@ -63,6 +63,9 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         ent_y = float(g.get("ent_rel_y", h / 2.0))
         exi_x = float(g.get("exi_rel_x", w / 2.0))
         exi_y = float(g.get("exi_rel_y", h / 2.0))
+        zone_values_raw = g.get("zone_values", {})
+        if not isinstance(zone_values_raw, dict):
+            raise ValueError(f"groups.{gid}.zone_values must be an object")
         group_specs[gid] = StaticSpec(
             device=dev,
             id=gid,
@@ -75,10 +78,7 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
             clearance_bottom_rel=_to_int(g.get("facility_clearance_bottom", 0)),
             clearance_top_rel=_to_int(g.get("facility_clearance_top", 0)),
             rotatable=bool(g.get("rotatable", True)),
-            allowed_areas=g.get("allowed_areas", None),
-            facility_weight=float(g.get("facility_weight", float("-inf"))),
-            facility_height=float(g.get("facility_height", float("-inf"))),
-            facility_dry=float(g.get("facility_dry", float("inf"))),
+            zone_values=dict(zone_values_raw),
         )
 
     flow_raw = data.get("flow", {})
@@ -91,21 +91,50 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
 
     zones = data.get("zones", {}) if isinstance(data.get("zones"), dict) else {}
     forbidden_areas: List[Dict[str, Any]] = list(zones.get("forbidden_areas", []))
-    weight_areas: List[Dict[str, Any]] = list(zones.get("weight_areas", []))
-    dry_areas: List[Dict[str, Any]] = list(zones.get("dry_areas", []))
-    height_areas: List[Dict[str, Any]] = list(zones.get("height_areas", []))
-    placement_areas: List[Dict[str, Any]] = list(zones.get("placement_areas", []))
+    if not isinstance(forbidden_areas, list):
+        raise ValueError("zones.forbidden_areas must be a list")
+    for i, a in enumerate(forbidden_areas):
+        if not isinstance(a, dict) or "rect" not in a:
+            raise ValueError(f"zones.forbidden_areas[{i}] must contain key 'rect'")
 
-    for name, areas in [("weight_areas", weight_areas), ("dry_areas", dry_areas), ("height_areas", height_areas)]:
+    constraints_raw = zones.get("constraints", {})
+    if not isinstance(constraints_raw, dict):
+        raise ValueError("zones.constraints must be an object")
+
+    valid_ops = {"<", "<=", ">", ">=", "==", "!="}
+    valid_dtypes = {"float", "int", "bool"}
+    zone_constraints: Dict[str, Dict[str, Any]] = {}
+    for cname, raw in constraints_raw.items():
+        if not isinstance(raw, dict):
+            raise ValueError(f"zones.constraints.{cname} must be an object")
+        dtype = str(raw.get("dtype", "")).lower()
+        if dtype not in valid_dtypes:
+            raise ValueError(
+                f"zones.constraints.{cname}.dtype must be one of {sorted(valid_dtypes)}, got {dtype!r}"
+            )
+        op = str(raw.get("op", ""))
+        if op not in valid_ops:
+            raise ValueError(
+                f"zones.constraints.{cname}.op must be one of {sorted(valid_ops)}, got {op!r}"
+            )
+        areas = raw.get("areas", [])
         if not isinstance(areas, list):
-            raise ValueError(f"zones.{name} must be a list")
+            raise ValueError(f"zones.constraints.{cname}.areas must be a list")
+        norm_areas: List[Dict[str, Any]] = []
         for i, a in enumerate(areas):
             if not isinstance(a, dict) or "rect" not in a or "value" not in a:
-                raise ValueError(f"zones.{name}[{i}] must contain keys 'rect' and 'value'")
-
-    for i, a in enumerate(placement_areas):
-        if not isinstance(a, dict) or "id" not in a or "rect" not in a:
-            raise ValueError(f"zones.placement_areas[{i}] must contain keys 'id' and 'rect'")
+                raise ValueError(
+                    f"zones.constraints.{cname}.areas[{i}] must contain keys 'rect' and 'value'"
+                )
+            rect = a["rect"]
+            if not (isinstance(rect, (list, tuple)) and len(rect) == 4):
+                raise ValueError(f"zones.constraints.{cname}.areas[{i}].rect must be [x0,y0,x1,y1]")
+            norm_areas.append({"rect": list(rect), "value": a["value"]})
+        zone_constraints[str(cname)] = {
+            "dtype": dtype,
+            "op": op,
+            "areas": norm_areas,
+        }
 
     env = FactoryLayoutEnv(
         grid_width=grid_w,
@@ -113,13 +142,7 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         group_specs=group_specs,
         group_flow=flow,
         forbidden_areas=forbidden_areas,
-        default_weight=float(env_cfg.get("default_weight", float("inf"))),
-        default_height=float(env_cfg.get("default_height", float("inf"))),
-        default_dry=float(env_cfg.get("default_dry", -float("inf"))),
-        weight_areas=weight_areas,
-        height_areas=height_areas,
-        dry_areas=dry_areas,
-        placement_areas=placement_areas,
+        zone_constraints=zone_constraints,
         reward_scale=float(env_cfg.get("reward_scale", 100.0)),
         penalty_weight=float(env_cfg.get("penalty_weight", 50000.0)),
     )

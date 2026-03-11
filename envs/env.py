@@ -43,20 +43,9 @@ class FactoryLayoutEnv(gym.Env):
         group_flow: Optional[Dict[GroupId, Dict[GroupId, float]]] = None,
         # Forbidden areas: [{"rect": [x0, y0, x1, y1]}, ...]
         forbidden_areas: Optional[List[Dict[str, Any]]] = None,
-        # --- zone/constraint configs (optional; fully map-based) ---
-        # For each constraint, we define a per-cell float map:
-        # - map is initialized from env.default_*
-        # - areas override map values on their rects
-        # Constraint invalidation is map comparison (same shape for all three):
-        # - Weight/Height: invalid if map < facility_value
-        # - Dry (reverse): invalid if map > facility_value
-        default_weight: float = float("inf"),
-        default_height: float = float("inf"),
-        default_dry: float = -float("inf"),
-        weight_areas: Optional[List[Dict[str, Any]]] = None,  # [{"rect":[x0,y0,x1,y1], "value": float}, ...]
-        height_areas: Optional[List[Dict[str, Any]]] = None,  # [{"rect":[...], "value": float}, ...]
-        dry_areas: Optional[List[Dict[str, Any]]] = None,  # [{"rect":[...], "value": float}, ...]
-        placement_areas: Optional[List[Dict[str, Any]]] = None,  # [{"id": str, "rect":[x0,y0,x1,y1]}, ...]
+        # Generic map constraints:
+        # zones.constraints.<name> = {"dtype": ..., "op": ..., "areas": [{"rect": [...], "value": ...}]}
+        zone_constraints: Optional[Dict[str, Dict[str, Any]]] = None,
         device: Optional[torch.device] = None,
         max_steps: Optional[int] = None,
         reward_scale: float = 100.0,
@@ -70,13 +59,7 @@ class FactoryLayoutEnv(gym.Env):
         group_specs_norm = self._normalize_group_specs(group_specs)
         group_flow_norm = dict(group_flow or {})
         self.forbidden_areas = list(forbidden_areas or [])
-        self.default_weight = float(default_weight)
-        self.default_height = float(default_height)
-        self.default_dry = float(default_dry)
-        self.weight_areas = list(weight_areas or [])
-        self.height_areas = list(height_areas or [])
-        self.dry_areas = list(dry_areas or [])
-        self.placement_areas = list(placement_areas or [])
+        self.zone_constraints = dict(zone_constraints or {})
         self.max_steps = max_steps
         self.reward_scale = float(reward_scale)
         self.penalty_weight = float(penalty_weight)
@@ -97,13 +80,7 @@ class FactoryLayoutEnv(gym.Env):
             grid_width=self.grid_width,
             device=self.device,
             forbidden_areas=self.forbidden_areas,
-            default_weight=self.default_weight,
-            weight_areas=self.weight_areas,
-            default_height=self.default_height,
-            height_areas=self.height_areas,
-            default_dry=self.default_dry,
-            dry_areas=self.dry_areas,
-            placement_areas=self.placement_areas,
+            zone_constraints=self.zone_constraints,
         )
         flow = FlowGraph(self.group_flow, device=self.device)
         self._state = EnvState.empty(
@@ -155,10 +132,7 @@ class FactoryLayoutEnv(gym.Env):
                 clearance_bottom_rel=int(s.clearance_bottom_rel),
                 clearance_top_rel=int(s.clearance_top_rel),
                 rotatable=bool(s.rotatable),
-                allowed_areas=list(s.allowed_areas) if s.allowed_areas is not None else None,
-                facility_height=float(s.facility_height),
-                facility_weight=float(s.facility_weight),
-                facility_dry=float(s.facility_dry),
+                zone_values=dict(getattr(s, "zone_values", {}) or {}),
             )
         return out
 
@@ -410,7 +384,6 @@ class FactoryLayoutEnv(gym.Env):
                 "width": float(s.width),
                 "height": float(s.height),
                 "rotatable": bool(s.rotatable),
-                "allowed_areas": None if s.allowed_areas is None else list(s.allowed_areas),
                 "clearance_left": float(s.clearance_left_rel),
                 "clearance_right": float(s.clearance_right_rel),
                 "clearance_bottom": float(s.clearance_bottom_rel),
@@ -419,9 +392,7 @@ class FactoryLayoutEnv(gym.Env):
                 "ent_rel_y": float(ent0[1]),
                 "exi_rel_x": float(ex0[0]),
                 "exi_rel_y": float(ex0[1]),
-                "facility_height": float(s.facility_height),
-                "facility_weight": float(s.facility_weight),
-                "facility_dry": float(s.facility_dry),
+                "zone_values": dict(getattr(s, "zone_values", {}) or {}),
             }
         
         # Flow 정보
@@ -437,6 +408,7 @@ class FactoryLayoutEnv(gym.Env):
             "groups": groups_data,
             "flow_edges": flow_edges,
             "forbidden_areas": list(self.forbidden_areas),
+            "zone_constraints": dict(self.zone_constraints),
         }
     
     def save_placement(self, path: str) -> None:
@@ -641,7 +613,8 @@ if __name__ == "__main__":
             exits_rel=[(20.0, 5.0), (10.0, 10.0)],     # 오른쪽 끝 중간, 위쪽 끝 중간
             clearance_left_rel=1, clearance_right_rel=1,
             clearance_bottom_rel=0, clearance_top_rel=0,
-            rotatable=True, facility_weight=3.0, facility_height=2.0, facility_dry=0.0,
+            rotatable=True,
+            zone_values={"weight": 3.0, "height": 2.0, "dry": 0.0, "placeable": 1},
         ),
         "B": StaticSpec(
             device=dev, id="B", width=15, height=15,
@@ -649,7 +622,8 @@ if __name__ == "__main__":
             exits_rel=[(15.0, 7.5), (7.5, 0.0)],       # 오른쪽 끝 중간, 아래쪽 끝 중간
             clearance_left_rel=1, clearance_right_rel=1,
             clearance_bottom_rel=0, clearance_top_rel=0,
-            rotatable=True, facility_weight=4.0, facility_height=2.0, facility_dry=0.0,
+            rotatable=True,
+            zone_values={"weight": 4.0, "height": 2.0, "dry": 0.0, "placeable": 1},
         ),
         "C": StaticSpec(
             device=dev, id="C", width=18, height=12,
@@ -657,17 +631,37 @@ if __name__ == "__main__":
             exits_rel=[(18.0, 4.0), (18.0, 8.0)],                # 오른쪽 끝 하·상
             clearance_left_rel=0, clearance_right_rel=0,
             clearance_bottom_rel=0, clearance_top_rel=0,
-            rotatable=True, facility_weight=12.0, facility_height=10.0, facility_dry=2.0,
+            rotatable=True,
+            zone_values={"weight": 12.0, "height": 10.0, "dry": 2.0, "placeable": 1},
         ),
     }
     # A→B, B→C 양방향 흐름
     group_flow = {"A": {"B": 1.0}, "B": {"C": 0.7}}
 
-    # 왼쪽 하단 forbidden, 오른쪽 영역(x>=60)은 weight=20 허용 (C 배치 가능)
+    # 왼쪽 하단 forbidden + 제약 맵
     forbidden_areas = [{"rect": [0, 0, 30, 20]}]
-    weight_areas  = [{"rect": [60, 0, 120, 80], "value": 20.0}]
-    height_areas  = [{"rect": [0, 60, 120, 80], "value": 5.0}]
-    dry_areas     = [{"rect": [0, 40, 60, 80],  "value": 2.0}]
+    zone_constraints = {
+        "weight": {
+            "dtype": "float",
+            "op": ">=",
+            "areas": [{"rect": [60, 0, 120, 80], "value": 20.0}],
+        },
+        "height": {
+            "dtype": "float",
+            "op": ">=",
+            "areas": [{"rect": [0, 60, 120, 80], "value": 5.0}],
+        },
+        "dry": {
+            "dtype": "float",
+            "op": "<=",
+            "areas": [{"rect": [0, 40, 60, 80], "value": 2.0}],
+        },
+        "placeable": {
+            "dtype": "int",
+            "op": "==",
+            "areas": [{"rect": [30, 20, 120, 80], "value": 1}],
+        },
+    }
 
     # --- env 생성 ---
     t0 = time.perf_counter()
@@ -675,15 +669,13 @@ if __name__ == "__main__":
         grid_width=120, grid_height=80,
         group_specs=group_specs, group_flow=group_flow,
         forbidden_areas=forbidden_areas,
-        default_weight=10.0, weight_areas=weight_areas,
-        default_height=20.0, height_areas=height_areas,
-        default_dry=0.0,     dry_areas=dry_areas,
+        zone_constraints=zone_constraints,
         device=dev, max_steps=10, log=True,
     )
     init_ms = (time.perf_counter() - t0) * 1000.0
 
     # --- reset: A·B 사전 배치, C만 step으로 배치 ---
-    # forbidden [0,0,30,20] 밖, C는 weight_areas(x>=60) 영역 필수
+    # forbidden [0,0,30,20] 밖 + constraint map 조건
     initial_positions = {
         "A": (32, 22, 0),   # A: 20×10, clearance 1 → x∈[31,53], y∈[22,32]
         "B": (55, 22, 0),   # B: 15×15, clearance 1 → x∈[54,71], y∈[22,37]
@@ -697,7 +689,7 @@ if __name__ == "__main__":
     print(f" placed={sorted(env.get_state().placed)}  remaining={env.get_state().remaining}")
     print(f" flow_port_pairs after reset: {env.get_state().flow_port_pairs}")
 
-    # --- step: C 배치 (x>=60+clearance, weight_areas 이내) ---
+    # --- step: C 배치 ---
     t2 = time.perf_counter()
     obs2, reward, terminated, truncated, info = env.step_action(
         EnvAction(gid="C", x=74, y=22, rot=0)

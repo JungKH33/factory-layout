@@ -25,13 +25,7 @@ class GridMaps:
         grid_width: int,
         device: torch.device,
         forbidden_areas: List[Dict[str, Any]],
-        default_weight: float,
-        weight_areas: List[Dict[str, Any]],
-        default_height: float,
-        height_areas: List[Dict[str, Any]],
-        default_dry: float,
-        dry_areas: List[Dict[str, Any]],
-        placement_areas: List[Dict[str, Any]],
+        zone_constraints: Dict[str, Dict[str, Any]],
     ) -> None:
         self._H = int(grid_height)
         self._W = int(grid_width)
@@ -43,32 +37,17 @@ class GridMaps:
             self._device,
             forbidden_areas,
         )
-        self._weight_map = self._build_value_map(
+        self._zone_constraints = dict(zone_constraints or {})
+        (
+            self._constraint_maps,
+            self._constraint_defined_masks,
+            self._constraint_ops,
+            self._constraint_dtypes,
+        ) = self._build_constraint_maps(
             self._H,
             self._W,
             self._device,
-            default_weight,
-            weight_areas,
-        )
-        self._height_map = self._build_value_map(
-            self._H,
-            self._W,
-            self._device,
-            default_height,
-            height_areas,
-        )
-        self._dry_map = self._build_value_map(
-            self._H,
-            self._W,
-            self._device,
-            default_dry,
-            dry_areas,
-        )
-        self._placement_map = self._build_area_map(
-            self._H,
-            self._W,
-            self._device,
-            placement_areas,
+            self._zone_constraints,
         )
 
         # Runtime fields.
@@ -103,20 +82,8 @@ class GridMaps:
         return self._static_invalid
 
     @property
-    def weight_map(self) -> torch.Tensor:
-        return self._weight_map
-
-    @property
-    def height_map(self) -> torch.Tensor:
-        return self._height_map
-
-    @property
-    def dry_map(self) -> torch.Tensor:
-        return self._dry_map
-
-    @property
-    def placement_map(self) -> Dict[str, torch.Tensor]:
-        return self._placement_map
+    def constraint_maps(self) -> Dict[str, torch.Tensor]:
+        return self._constraint_maps
 
     @staticmethod
     def _rect_hits_invalid(rect: RectI, src: torch.Tensor) -> bool:
@@ -210,10 +177,11 @@ class GridMaps:
         out.bbox_max_y = float(self.bbox_max_y)
 
         out._static_invalid = self._static_invalid
-        out._weight_map = self._weight_map
-        out._height_map = self._height_map
-        out._dry_map = self._dry_map
-        out._placement_map = self._placement_map
+        out._zone_constraints = self._zone_constraints
+        out._constraint_maps = self._constraint_maps
+        out._constraint_defined_masks = self._constraint_defined_masks
+        out._constraint_ops = self._constraint_ops
+        out._constraint_dtypes = self._constraint_dtypes
         out._group_specs = self._group_specs
         out._zone_by_gid = self._zone_by_gid
         return out
@@ -333,17 +301,23 @@ class GridMaps:
 
     def _zone_for_spec(self, spec: StaticSpec) -> torch.Tensor:
         z = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
-        z |= (self._weight_map < float(spec.facility_weight))
-        z |= (self._height_map < float(spec.facility_height))
-        z |= (self._dry_map > float(spec.facility_dry))
-        allowed = spec.allowed_areas
-        if allowed:
-            allowed_mask = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
-            for aid in allowed:
-                m = self._placement_map.get(aid, None)
-                if isinstance(m, torch.Tensor):
-                    allowed_mask |= m
-            z |= (~allowed_mask)
+        zone_values = dict(getattr(spec, "zone_values", {}) or {})
+        for cname, cmap in self._constraint_maps.items():
+            if cname not in zone_values:
+                # Group에 값이 없으면 해당 제약은 무시.
+                continue
+            op = self._constraint_ops[cname]
+            dtype = self._constraint_dtypes[cname]
+            gval = self._coerce_group_value(zone_values[cname], dtype=dtype, cname=cname)
+            pass_mask = self._compare_constraint(cmap, gval, op=op)
+            defined = self._constraint_defined_masks[cname]
+            if op == "==":
+                # == 는 정의된 영역만 통과 가능 (예: placeable zone-only)
+                pass_mask = pass_mask & defined
+            else:
+                # 그 외 연산은 미정의 영역을 통과로 본다.
+                pass_mask = pass_mask | (~defined)
+            z |= (~pass_mask)
         return z
 
     @staticmethod
@@ -366,55 +340,105 @@ class GridMaps:
                 inv[y0:y1, x0:x1] = True
         return inv
 
-    @staticmethod
-    def _build_value_map(
+    def _build_constraint_maps(
+        self,
         H: int,
         W: int,
         device: torch.device,
-        default_value: float,
-        areas: List[Dict[str, Any]],
-    ) -> torch.Tensor:
-        m = torch.full((H, W), float(default_value), dtype=torch.float32, device=device)
-        for area in areas:
-            if not isinstance(area, dict):
+        constraints: Dict[str, Dict[str, Any]],
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor], Dict[str, str], Dict[str, str]]:
+        maps: Dict[str, torch.Tensor] = {}
+        defined_masks: Dict[str, torch.Tensor] = {}
+        ops: Dict[str, str] = {}
+        dtypes: Dict[str, str] = {}
+
+        for cname, cfg in constraints.items():
+            if not isinstance(cfg, dict):
                 continue
-            rect = area.get("rect", None)
-            value = area.get("value", None)
-            if rect is None or value is None:
-                continue
-            x0, y0, x1, y1 = rect
-            x0 = max(0, min(W, int(x0)))
-            x1 = max(0, min(W, int(x1)))
-            y0 = max(0, min(H, int(y0)))
-            y1 = max(0, min(H, int(y1)))
-            if x1 > x0 and y1 > y0:
-                m[y0:y1, x0:x1] = float(value)
-        return m
+            dtype = str(cfg.get("dtype", "float")).lower()
+            op = str(cfg.get("op", "=="))
+            areas = cfg.get("areas", [])
+            if dtype not in {"float", "int", "bool"}:
+                raise ValueError(f"invalid dtype for constraint {cname!r}: {dtype!r}")
+            if op not in {"<", "<=", ">", ">=", "==", "!="}:
+                raise ValueError(f"invalid op for constraint {cname!r}: {op!r}")
+            if dtype == "bool" and op not in {"==", "!="}:
+                raise ValueError(f"bool constraint {cname!r} supports only == or !=")
+            if not isinstance(areas, list):
+                raise ValueError(f"constraint {cname!r}.areas must be a list")
+
+            if dtype == "float":
+                m = torch.zeros((H, W), dtype=torch.float32, device=device)
+            elif dtype == "int":
+                m = torch.zeros((H, W), dtype=torch.int64, device=device)
+            else:
+                m = torch.zeros((H, W), dtype=torch.bool, device=device)
+            defined = torch.zeros((H, W), dtype=torch.bool, device=device)
+
+            for area in areas:
+                if not isinstance(area, dict):
+                    continue
+                rect = area.get("rect", None)
+                value = area.get("value", None)
+                if rect is None or value is None:
+                    continue
+                x0, y0, x1, y1 = rect
+                x0 = max(0, min(W, int(x0)))
+                x1 = max(0, min(W, int(x1)))
+                y0 = max(0, min(H, int(y0)))
+                y1 = max(0, min(H, int(y1)))
+                if x1 <= x0 or y1 <= y0:
+                    continue
+                if dtype == "float":
+                    v = float(value)
+                elif dtype == "int":
+                    vf = float(value)
+                    rv = round(vf)
+                    if abs(vf - rv) > 1e-6:
+                        raise ValueError(
+                            f"constraint {cname!r} expects int values, got {value!r}"
+                        )
+                    v = int(rv)
+                else:
+                    v = bool(value)
+                m[y0:y1, x0:x1] = v
+                defined[y0:y1, x0:x1] = True
+
+            name = str(cname)
+            maps[name] = m
+            defined_masks[name] = defined
+            ops[name] = op
+            dtypes[name] = dtype
+
+        return maps, defined_masks, ops, dtypes
+
+    def _coerce_group_value(self, v: Any, *, dtype: str, cname: str) -> Any:
+        if dtype == "float":
+            return float(v)
+        if dtype == "int":
+            vf = float(v)
+            rv = round(vf)
+            if abs(vf - rv) > 1e-6:
+                raise ValueError(
+                    f"group zone value for {cname!r} must be int-like, got {v!r}"
+                )
+            return int(rv)
+        if dtype == "bool":
+            return bool(v)
+        raise ValueError(f"unknown dtype {dtype!r} for {cname!r}")
 
     @staticmethod
-    def _build_area_map(
-        H: int,
-        W: int,
-        device: torch.device,
-        placement_areas: List[Dict[str, Any]],
-    ) -> Dict[str, torch.Tensor]:
-        masks: Dict[str, torch.Tensor] = {}
-        for area in placement_areas:
-            if not isinstance(area, dict):
-                continue
-            aid = str(area.get("id", ""))
-            if not aid:
-                continue
-            rect = area.get("rect", None)
-            if rect is None:
-                continue
-            x0, y0, x1, y1 = rect
-            x0 = max(0, min(W, int(x0)))
-            x1 = max(0, min(W, int(x1)))
-            y0 = max(0, min(H, int(y0)))
-            y1 = max(0, min(H, int(y1)))
-            m = torch.zeros((H, W), dtype=torch.bool, device=device)
-            if x1 > x0 and y1 > y0:
-                m[y0:y1, x0:x1] = True
-            masks[aid] = m
-        return masks
+    def _compare_constraint(src: torch.Tensor, v: Any, *, op: str) -> torch.Tensor:
+        if op == "<":
+            return src < v
+        if op == "<=":
+            return src <= v
+        if op == ">":
+            return src > v
+        if op == ">=":
+            return src >= v
+        if op == "==":
+            return src == v
+        if op == "!=":
+            return src != v
+        raise ValueError(f"unsupported op: {op!r}")

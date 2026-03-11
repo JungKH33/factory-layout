@@ -219,24 +219,55 @@ class Session:
         
         current_gid = engine.get_state().remaining[0] if engine.get_state().remaining else None
         
-        # Extract zones
-        def _extract_zones(areas_attr: str) -> list:
-            zones = []
-            areas = getattr(engine, areas_attr, None)
-            if areas and isinstance(areas, list):
-                for a in areas:
-                    if isinstance(a, dict) and "rect" in a:
-                        r = a["rect"]
-                        zones.append(ZoneRect(
-                            x0=float(r[0]), y0=float(r[1]),
-                            x1=float(r[2]), y1=float(r[3]),
-                            value=float(a.get("value")) if a.get("value") is not None else None,
-                            id=str(a.get("id")) if a.get("id") is not None else None,
-                        ))
-            return zones
-        
+        def _zone_rect_from_dict(a: dict, *, id_value: str | None = None) -> ZoneRect | None:
+            if "rect" not in a:
+                return None
+            r = a["rect"]
+            if not (isinstance(r, (list, tuple)) and len(r) == 4):
+                return None
+            raw_val = a.get("value", None)
+            val: float | None = None
+            if raw_val is not None and isinstance(raw_val, (int, float)):
+                val = float(raw_val)
+            return ZoneRect(
+                x0=float(r[0]), y0=float(r[1]),
+                x1=float(r[2]), y1=float(r[3]),
+                value=val,
+                id=id_value,
+            )
+
         # Extract forbidden_areas from engine
-        forbidden_areas_out = _extract_zones("forbidden_areas")
+        forbidden_areas_out: list[ZoneRect] = []
+        areas = getattr(engine, "forbidden_areas", None)
+        if isinstance(areas, list):
+            for a in areas:
+                if not isinstance(a, dict):
+                    continue
+                z = _zone_rect_from_dict(a)
+                if z is not None:
+                    forbidden_areas_out.append(z)
+
+        # Extract generic constraints zones
+        constraint_zones: Dict[str, List[ZoneRect]] = {}
+        constraints = getattr(engine, "zone_constraints", None)
+        if isinstance(constraints, dict):
+            for cname, cfg in constraints.items():
+                if not isinstance(cfg, dict):
+                    continue
+                op = str(cfg.get("op", ""))
+                c_zones: list[ZoneRect] = []
+                areas = cfg.get("areas", [])
+                if isinstance(areas, list):
+                    for a in areas:
+                        if not isinstance(a, dict):
+                            continue
+                        raw_val = a.get("value", None)
+                        label_val = str(raw_val) if raw_val is not None else ""
+                        label = f"{cname}{op}{label_val}" if label_val else str(cname)
+                        z = _zone_rect_from_dict(a, id_value=label)
+                        if z is not None:
+                            c_zones.append(z)
+                constraint_zones[str(cname)] = c_zones
         
         # Extract flow edges with positions
         flow_edges = []
@@ -273,10 +304,7 @@ class Session:
             can_undo=self.can_undo(),
             can_redo=self.can_redo(),
             forbidden_areas=forbidden_areas_out,
-            placement_zones=_extract_zones("placement_areas"),
-            weight_zones=_extract_zones("weight_areas"),
-            dry_zones=_extract_zones("dry_areas"),
-            height_zones=_extract_zones("height_areas"),
+            constraint_zones=constraint_zones,
             flow_edges=flow_edges,
         )
 
