@@ -28,6 +28,7 @@ class EnvState:
         "remaining",
         "step_count",
         "placed_nodes_order",
+        "device",
         "maps",
         "flow",
     )
@@ -37,6 +38,7 @@ class EnvState:
     remaining: List[GroupId]
     step_count: int
     placed_nodes_order: List[GroupId]
+    device: torch.device
     maps: GridMaps
     flow: FlowGraph
     _state_sig: Tuple[int, int, Tuple[str, ...]]
@@ -53,7 +55,9 @@ class EnvState:
         maps: GridMaps,
         group_specs: Dict[GroupId, object],
         flow: FlowGraph,
+        device: torch.device,
     ) -> "EnvState":
+        dev = torch.device(device)
         maps.bind_group_specs(group_specs)
         maps.reset_runtime()
         flow.reset_runtime()
@@ -64,6 +68,7 @@ class EnvState:
             remaining=[],
             step_count=0,
             placed_nodes_order=[],
+            device=dev,
             maps=maps,
             flow=flow,
             _state_sig=cls._make_state_sig(grid_height=h, grid_width=w, gids=list(group_specs.keys())),
@@ -83,6 +88,7 @@ class EnvState:
             remaining=list(self.remaining),
             step_count=int(self.step_count),
             placed_nodes_order=list(self.placed_nodes_order),
+            device=self.device,
             maps=self.maps.copy(),
             flow=self.flow.copy(),
             _state_sig=self._state_sig,
@@ -256,7 +262,7 @@ class EnvState:
         gid = action_space.gid
         if gid is None:
             raise ValueError("action_space.gid is required")
-        device = self.maps.invalid.device
+        device = torch.device(self.device)
         xyrot = action_space.xyrot.to(dtype=torch.long, device=device).view(-1, 3)
         valid = action_space.mask.to(dtype=torch.bool, device=device).view(-1)
         if int(xyrot.shape[0]) == 0:

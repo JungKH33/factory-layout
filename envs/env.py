@@ -87,6 +87,7 @@ class FactoryLayoutEnv(gym.Env):
             maps=maps,
             flow=flow,
             group_specs=self.group_specs,
+            device=self.device,
         )
 
         # Single RewardComposer used for both score() (cost) and delta() (delta_cost).

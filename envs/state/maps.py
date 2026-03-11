@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -52,8 +52,6 @@ class GridMaps:
         # Runtime fields.
         self.occ_invalid = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
         self.clear_invalid = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
-        self.zone_invalid = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
-        self.invalid = self._static_invalid.clone()
         self.has_bbox = False
         self.bbox_min_x = 0.0
         self.bbox_max_x = 0.0
@@ -62,7 +60,7 @@ class GridMaps:
 
         # Private caches.
         self._group_specs: Dict[GroupId, StaticSpec] = {}
-        self._zone_by_gid: Dict[GroupId, torch.Tensor] = {}
+        self._zone_cache: Dict[GroupId, torch.Tensor] = {}
 
     @property
     def shape(self) -> Tuple[int, int]:
@@ -79,6 +77,12 @@ class GridMaps:
     @property
     def static_invalid(self) -> torch.Tensor:
         return self._static_invalid
+
+    @property
+    def invalid(self) -> torch.Tensor:
+        # Runtime composite invalid map (no cached tensor):
+        # static forbidden + occupied body area.
+        return self._static_invalid | self.occ_invalid
 
     @property
     def constraint_maps(self) -> Dict[str, torch.Tensor]:
@@ -101,7 +105,7 @@ class GridMaps:
         body_rect: RectI,
         pad_rect: RectI,
     ) -> bool:
-        invalid = self._static_invalid | self.occ_invalid | self._zone_for_gid(gid)
+        invalid = self._static_invalid | self.occ_invalid | self._get_zone_cache(gid)
         if self._rect_hits_invalid(body_rect, invalid):
             return False
         if self._rect_hits_invalid(body_rect, self.clear_invalid):
@@ -127,7 +131,7 @@ class GridMaps:
         cR = int(cR)
         cB = int(cB)
         cT = int(cT)
-        invalid = self._static_invalid | self.occ_invalid | self._zone_for_gid(gid)
+        invalid = self._static_invalid | self.occ_invalid | self._get_zone_cache(gid)
         kw = int(w + cL + cR)
         kh = int(h + cB + cT)
 
@@ -157,7 +161,7 @@ class GridMaps:
 
     def bind_group_specs(self, group_specs: Dict[GroupId, StaticSpec]) -> None:
         self._group_specs = group_specs
-        self.rebuild_zone_cache()
+        self._build_zone_cache()
 
     def copy(self) -> "GridMaps":
         out = object.__new__(GridMaps)
@@ -167,8 +171,6 @@ class GridMaps:
 
         out.occ_invalid = self.occ_invalid.clone()
         out.clear_invalid = self.clear_invalid.clone()
-        out.zone_invalid = self.zone_invalid.clone()
-        out.invalid = self.invalid.clone()
         out.has_bbox = bool(self.has_bbox)
         out.bbox_min_x = float(self.bbox_min_x)
         out.bbox_max_x = float(self.bbox_max_x)
@@ -181,7 +183,7 @@ class GridMaps:
         out._constraint_ops = self._constraint_ops
         out._constraint_dtypes = self._constraint_dtypes
         out._group_specs = self._group_specs
-        out._zone_by_gid = self._zone_by_gid
+        out._zone_cache = self._zone_cache
         return out
 
     def restore(self, src: "GridMaps") -> None:
@@ -195,8 +197,6 @@ class GridMaps:
             )
         self.occ_invalid.copy_(src.occ_invalid.to(device=self._device, dtype=torch.bool))
         self.clear_invalid.copy_(src.clear_invalid.to(device=self._device, dtype=torch.bool))
-        self.zone_invalid.copy_(src.zone_invalid.to(device=self._device, dtype=torch.bool))
-        self.invalid.copy_(src.invalid.to(device=self._device, dtype=torch.bool))
         self.has_bbox = bool(src.has_bbox)
         self.bbox_min_x = float(src.bbox_min_x)
         self.bbox_max_x = float(src.bbox_max_x)
@@ -206,18 +206,11 @@ class GridMaps:
     def reset_runtime(self) -> None:
         self.occ_invalid.zero_()
         self.clear_invalid.zero_()
-        self.zone_invalid.zero_()
         self.has_bbox = False
         self.bbox_min_x = 0.0
         self.bbox_max_x = 0.0
         self.bbox_min_y = 0.0
         self.bbox_max_y = 0.0
-        self.recompute_invalid()
-
-    def recompute_invalid(self) -> None:
-        self.invalid.copy_(self._static_invalid)
-        self.invalid.logical_or_(self.occ_invalid)
-        self.invalid.logical_or_(self.zone_invalid)
 
     def paint_rects(
         self,
@@ -260,7 +253,6 @@ class GridMaps:
         cy1 = max(0, min(self._H, int(py1)))
         if cx0 < cx1 and cy0 < cy1:
             self.clear_invalid[cy0:cy1, cx0:cx1] = True
-        self.recompute_invalid()
 
     def placed_bbox(self) -> Tuple[float, float, float, float]:
         if not self.has_bbox:
@@ -272,46 +264,33 @@ class GridMaps:
             float(self.bbox_max_y),
         )
 
-    def apply_zone_for_gid(self, gid: Optional[GroupId]) -> None:
-        if gid is None:
-            self.zone_invalid.zero_()
-            self.recompute_invalid()
-            return
-
-        zone = self._zone_for_gid(gid)
-        self.zone_invalid.copy_(zone)
-        self.recompute_invalid()
-
-    def rebuild_zone_cache(self) -> None:
-        zone_by_gid: Dict[GroupId, torch.Tensor] = {}
+    def _build_zone_cache(self) -> None:
+        zone_cache: Dict[GroupId, torch.Tensor] = {}
         for gid, spec in self._group_specs.items():
-            zone_by_gid[gid] = self._zone_for_spec(spec)
-        self._zone_by_gid = zone_by_gid
+            z = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
+            zone_values = dict(getattr(spec, "zone_values", {}) or {})
+            for cname, cmap in self._constraint_maps.items():
+                if cname not in zone_values:
+                    # Group에 값이 없으면 해당 제약은 무시.
+                    continue
+                op = self._constraint_ops[cname]
+                dtype = self._constraint_dtypes[cname]
+                gval = self._coerce_group_value(zone_values[cname], dtype=dtype, cname=cname)
+                pass_mask = self._compare_constraint(cmap, gval, op=op)
+                z |= (~pass_mask)
+            zone_cache[gid] = z
+        self._zone_cache = zone_cache
 
-    def _zone_for_gid(self, gid: GroupId) -> torch.Tensor:
+    def _get_zone_cache(self, gid: GroupId) -> torch.Tensor:
         if gid not in self._group_specs:
             raise KeyError(f"unknown gid={gid!r}")
-        z = self._zone_by_gid.get(gid, None)
+        z = self._zone_cache.get(gid, None)
         if isinstance(z, torch.Tensor):
             return z
         raise RuntimeError(
             f"zone cache miss for gid={gid!r}; "
-            "call bind_group_specs()/rebuild_zone_cache() before placement checks"
+            "call bind_group_specs()/_build_zone_cache() before placement checks"
         )
-
-    def _zone_for_spec(self, spec: StaticSpec) -> torch.Tensor:
-        z = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
-        zone_values = dict(getattr(spec, "zone_values", {}) or {})
-        for cname, cmap in self._constraint_maps.items():
-            if cname not in zone_values:
-                # Group에 값이 없으면 해당 제약은 무시.
-                continue
-            op = self._constraint_ops[cname]
-            dtype = self._constraint_dtypes[cname]
-            gval = self._coerce_group_value(zone_values[cname], dtype=dtype, cname=cname)
-            pass_mask = self._compare_constraint(cmap, gval, op=op)
-            z |= (~pass_mask)
-        return z
 
     @staticmethod
     def _build_static_invalid(
