@@ -463,9 +463,22 @@ def build_zones(
     forbidden_areas: List[Dict],
     column_areas: List[Dict],
     scale: float,
+    *,
+    default_height: float | None = None,
+    default_weight: float | None = None,
+    default_dry: float | None = None,
+    default_placeable: int = 0,
 ) -> Dict[str, Any]:
     """Convert area constraints to zones.constraints schema."""
     constraints: Dict[str, Any] = {}
+
+    def _require_default(cname: str, dv: float | None) -> float:
+        if dv is None:
+            raise ValueError(
+                f"{cname} constraint requires default value. "
+                f"Set factoryDimensions.{cname} in source JSON."
+            )
+        return float(dv)
 
     # Placeable (== 1)
     placeable_constraint_areas = []
@@ -478,6 +491,7 @@ def build_zones(
         constraints["placeable"] = {
             "dtype": "int",
             "op": "==",
+            "default": int(default_placeable),
             "areas": placeable_constraint_areas,
         }
 
@@ -488,10 +502,12 @@ def build_zones(
             "rect": convert_rect(area, scale),
             "value": area.get("ceilingHeight", area.get("value", 0)),
         })
-    if height_constraint_areas:
+    if default_height is not None or height_constraint_areas:
+        height_default = _require_default("ceilingHeight", default_height)
         constraints["height"] = {
             "dtype": "float",
             "op": ">=",
+            "default": height_default,
             "areas": height_constraint_areas,
         }
 
@@ -502,10 +518,12 @@ def build_zones(
             "rect": convert_rect(area, scale),
             "value": area.get("weight", area.get("value", 0)),
         })
-    if weight_constraint_areas:
+    if default_weight is not None or weight_constraint_areas:
+        weight_default = _require_default("weight", default_weight)
         constraints["weight"] = {
             "dtype": "float",
             "op": ">=",
+            "default": weight_default,
             "areas": weight_constraint_areas,
         }
 
@@ -516,10 +534,12 @@ def build_zones(
             "rect": convert_rect(area, scale),
             "value": area.get("dry", area.get("value", 0)),
         })
-    if dry_constraint_areas:
+    if default_dry is not None or dry_constraint_areas:
+        dry_default = _require_default("dry", default_dry)
         constraints["dry"] = {
             "dtype": "float",
             "op": "<=",
+            "default": dry_default,
             "areas": dry_constraint_areas,
         }
     
@@ -770,7 +790,11 @@ def convert_sma_to_env(
     area_dry = data.get("areaDry", [])
     zones = build_zones(
         placeable_areas, area_ceilings, area_weights, area_dry,
-        forbidden_areas, column_areas, scale
+        forbidden_areas, column_areas, scale,
+        default_height=factory_dim.get("ceilingHeight", None),
+        default_weight=factory_dim.get("weight", None),
+        default_dry=factory_dim.get("dry", None),
+        default_placeable=0,
     )
     print(f"[INFO] Forbidden areas: {len(zones.get('forbidden_areas', []))}")
     constraints = zones.get("constraints", {})

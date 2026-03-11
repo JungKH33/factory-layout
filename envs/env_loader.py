@@ -117,6 +117,9 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
             raise ValueError(
                 f"zones.constraints.{cname}.op must be one of {sorted(valid_ops)}, got {op!r}"
             )
+        if "default" not in raw:
+            raise ValueError(f"zones.constraints.{cname}.default is required")
+        default_value = raw["default"]
         areas = raw.get("areas", [])
         if not isinstance(areas, list):
             raise ValueError(f"zones.constraints.{cname}.areas must be a list")
@@ -133,6 +136,7 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         zone_constraints[str(cname)] = {
             "dtype": dtype,
             "op": op,
+            "default": default_value,
             "areas": norm_areas,
         }
 

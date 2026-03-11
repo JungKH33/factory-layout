@@ -40,7 +40,6 @@ class GridMaps:
         self._zone_constraints = dict(zone_constraints or {})
         (
             self._constraint_maps,
-            self._constraint_defined_masks,
             self._constraint_ops,
             self._constraint_dtypes,
         ) = self._build_constraint_maps(
@@ -179,7 +178,6 @@ class GridMaps:
         out._static_invalid = self._static_invalid
         out._zone_constraints = self._zone_constraints
         out._constraint_maps = self._constraint_maps
-        out._constraint_defined_masks = self._constraint_defined_masks
         out._constraint_ops = self._constraint_ops
         out._constraint_dtypes = self._constraint_dtypes
         out._group_specs = self._group_specs
@@ -285,9 +283,10 @@ class GridMaps:
         self.recompute_invalid()
 
     def rebuild_zone_cache(self) -> None:
-        self._zone_by_gid = {}
+        zone_by_gid: Dict[GroupId, torch.Tensor] = {}
         for gid, spec in self._group_specs.items():
-            self._zone_by_gid[gid] = self._zone_for_spec(spec).clone()
+            zone_by_gid[gid] = self._zone_for_spec(spec)
+        self._zone_by_gid = zone_by_gid
 
     def _zone_for_gid(self, gid: GroupId) -> torch.Tensor:
         if gid not in self._group_specs:
@@ -295,9 +294,10 @@ class GridMaps:
         z = self._zone_by_gid.get(gid, None)
         if isinstance(z, torch.Tensor):
             return z
-        z2 = self._zone_for_spec(self._group_specs[gid]).clone()
-        self._zone_by_gid[gid] = z2
-        return z2
+        raise RuntimeError(
+            f"zone cache miss for gid={gid!r}; "
+            "call bind_group_specs()/rebuild_zone_cache() before placement checks"
+        )
 
     def _zone_for_spec(self, spec: StaticSpec) -> torch.Tensor:
         z = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
@@ -310,13 +310,6 @@ class GridMaps:
             dtype = self._constraint_dtypes[cname]
             gval = self._coerce_group_value(zone_values[cname], dtype=dtype, cname=cname)
             pass_mask = self._compare_constraint(cmap, gval, op=op)
-            defined = self._constraint_defined_masks[cname]
-            if op == "==":
-                # == 는 정의된 영역만 통과 가능 (예: placeable zone-only)
-                pass_mask = pass_mask & defined
-            else:
-                # 그 외 연산은 미정의 영역을 통과로 본다.
-                pass_mask = pass_mask | (~defined)
             z |= (~pass_mask)
         return z
 
@@ -346,9 +339,8 @@ class GridMaps:
         W: int,
         device: torch.device,
         constraints: Dict[str, Dict[str, Any]],
-    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor], Dict[str, str], Dict[str, str]]:
+    ) -> Tuple[Dict[str, torch.Tensor], Dict[str, str], Dict[str, str]]:
         maps: Dict[str, torch.Tensor] = {}
-        defined_masks: Dict[str, torch.Tensor] = {}
         ops: Dict[str, str] = {}
         dtypes: Dict[str, str] = {}
 
@@ -366,14 +358,21 @@ class GridMaps:
                 raise ValueError(f"bool constraint {cname!r} supports only == or !=")
             if not isinstance(areas, list):
                 raise ValueError(f"constraint {cname!r}.areas must be a list")
+            if "default" not in cfg:
+                raise ValueError(f"constraint {cname!r}.default is required")
 
+            default_v = self._coerce_constraint_value(
+                cfg["default"],
+                dtype=dtype,
+                cname=str(cname),
+                ctx="default",
+            )
             if dtype == "float":
-                m = torch.zeros((H, W), dtype=torch.float32, device=device)
+                m = torch.full((H, W), float(default_v), dtype=torch.float32, device=device)
             elif dtype == "int":
-                m = torch.zeros((H, W), dtype=torch.int64, device=device)
+                m = torch.full((H, W), int(default_v), dtype=torch.int64, device=device)
             else:
-                m = torch.zeros((H, W), dtype=torch.bool, device=device)
-            defined = torch.zeros((H, W), dtype=torch.bool, device=device)
+                m = torch.full((H, W), bool(default_v), dtype=torch.bool, device=device)
 
             for area in areas:
                 if not isinstance(area, dict):
@@ -389,30 +388,25 @@ class GridMaps:
                 y1 = max(0, min(H, int(y1)))
                 if x1 <= x0 or y1 <= y0:
                     continue
-                if dtype == "float":
-                    v = float(value)
-                elif dtype == "int":
-                    vf = float(value)
-                    rv = round(vf)
-                    if abs(vf - rv) > 1e-6:
-                        raise ValueError(
-                            f"constraint {cname!r} expects int values, got {value!r}"
-                        )
-                    v = int(rv)
-                else:
-                    v = bool(value)
+                v = self._coerce_constraint_value(
+                    value,
+                    dtype=dtype,
+                    cname=str(cname),
+                    ctx="area",
+                )
                 m[y0:y1, x0:x1] = v
-                defined[y0:y1, x0:x1] = True
 
             name = str(cname)
             maps[name] = m
-            defined_masks[name] = defined
             ops[name] = op
             dtypes[name] = dtype
 
-        return maps, defined_masks, ops, dtypes
+        return maps, ops, dtypes
 
     def _coerce_group_value(self, v: Any, *, dtype: str, cname: str) -> Any:
+        return self._coerce_constraint_value(v, dtype=dtype, cname=cname, ctx="group")
+
+    def _coerce_constraint_value(self, v: Any, *, dtype: str, cname: str, ctx: str) -> Any:
         if dtype == "float":
             return float(v)
         if dtype == "int":
@@ -420,12 +414,18 @@ class GridMaps:
             rv = round(vf)
             if abs(vf - rv) > 1e-6:
                 raise ValueError(
-                    f"group zone value for {cname!r} must be int-like, got {v!r}"
+                    f"{ctx} value for {cname!r} must be int-like, got {v!r}"
                 )
             return int(rv)
         if dtype == "bool":
-            return bool(v)
-        raise ValueError(f"unknown dtype {dtype!r} for {cname!r}")
+            if isinstance(v, bool):
+                return v
+            if isinstance(v, (int, float)) and float(v) in (0.0, 1.0):
+                return bool(int(v))
+            raise ValueError(
+                f"{ctx} value for {cname!r} must be bool (or 0/1), got {v!r}"
+            )
+        raise ValueError(f"unknown dtype {dtype!r} for {cname!r} ({ctx})")
 
     @staticmethod
     def _compare_constraint(src: torch.Tensor, v: Any, *, op: str) -> torch.Tensor:
