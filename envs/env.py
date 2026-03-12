@@ -47,6 +47,7 @@ class FactoryLayoutEnv(gym.Env):
         # zones.constraints.<name> = {"dtype": ..., "op": ..., "default": ..., "areas": [{"rect": [...], "value": ...}]}
         zone_constraints: Optional[Dict[str, Dict[str, Any]]] = None,
         device: Optional[torch.device] = None,
+        collision_check: str = "auto",
         max_steps: Optional[int] = None,
         reward_scale: float = 100.0,
         penalty_weight: float = 50000.0,
@@ -60,6 +61,7 @@ class FactoryLayoutEnv(gym.Env):
         group_flow_norm = dict(group_flow or {})
         self.forbidden_areas = list(forbidden_areas or [])
         self.zone_constraints = dict(zone_constraints or {})
+        self.collision_check = str(collision_check).lower()
         self.max_steps = max_steps
         self.reward_scale = float(reward_scale)
         self.penalty_weight = float(penalty_weight)
@@ -81,6 +83,7 @@ class FactoryLayoutEnv(gym.Env):
             device=self.device,
             forbidden_areas=self.forbidden_areas,
             zone_constraints=self.zone_constraints,
+            collision_check=self.collision_check,
         )
         flow = FlowGraph(self.group_flow, device=self.device)
         self._state = EnvState.empty(

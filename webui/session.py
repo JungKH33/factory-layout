@@ -333,7 +333,11 @@ class SessionManager:
         params = req.params or {}
         
         # Load environment
-        loaded = load_env(req.env_json, device=device)
+        loaded = load_env(
+            req.env_json,
+            device=device,
+            collision_check=req.collision_check,
+        )
         engine = loaded.env
         engine.log = False  # Disable logging for web
         

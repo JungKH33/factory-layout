@@ -425,6 +425,7 @@ async function createSession() {
     
     const req = {
         env_json: document.getElementById('env-config').value,
+        collision_check: document.getElementById('collision-check').value,
         wrapper_mode: document.getElementById('wrapper-mode').value,
         agent_mode: document.getElementById('agent-mode').value,
         search_mode: document.getElementById('search-mode').value,

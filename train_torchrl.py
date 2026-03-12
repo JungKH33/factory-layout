@@ -51,6 +51,7 @@ def _require_torchrl() -> None:
 @dataclass(frozen=True)
 class Cfg:
     env_json: str
+    collision_check: str
     grid: int
     rot: int
     soft_coefficient: float
@@ -76,6 +77,7 @@ class Cfg:
 def parse_args() -> Cfg:
     p = argparse.ArgumentParser()
     p.add_argument("--env-json", type=str, default="envs/env_configs/basic_01.json")
+    p.add_argument("--collision-check", type=str, default="auto", choices=["auto", "conv", "prefixsum"])
     p.add_argument("--grid", type=int, default=224)
     p.add_argument("--rot", type=int, default=0)
     p.add_argument("--soft-coefficient", type=float, default=1.0)
@@ -101,6 +103,7 @@ def parse_args() -> Cfg:
     a = p.parse_args()
     return Cfg(
         env_json=str(a.env_json),
+        collision_check=str(a.collision_check),
         grid=int(a.grid),
         rot=int(a.rot),
         soft_coefficient=float(a.soft_coefficient),
@@ -145,7 +148,7 @@ def build_torchrl_env(*, cfg: Cfg, device: torch.device):
     )
 
     # We load the engine on the requested device (GPU-friendly).
-    loaded0 = load_env(cfg.env_json, device=device)
+    loaded0 = load_env(cfg.env_json, device=device, collision_check=cfg.collision_check)
     reset_kwargs = loaded0.reset_kwargs
 
     # Infer state dim deterministically from grid.
@@ -156,7 +159,7 @@ def build_torchrl_env(*, cfg: Cfg, device: torch.device):
     class MaskPlaceTorchRLEnv(EnvBase):
         def __init__(self):
             super().__init__(device=device)
-            loaded = load_env(cfg.env_json, device=device)
+            loaded = load_env(cfg.env_json, device=device, collision_check=cfg.collision_check)
             engine = loaded.env
             engine.log = False
             self._gym = MaskPlaceDecisionAdapter(
@@ -476,4 +479,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

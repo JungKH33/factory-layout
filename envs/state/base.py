@@ -153,7 +153,7 @@ class EnvState:
         cR = int(getattr(placement, "clearance_right", 0) or 0)
         cB = int(getattr(placement, "clearance_bottom", 0) or 0)
         cT = int(getattr(placement, "clearance_top", 0) or 0)
-        self.maps.paint_rects(
+        self.maps.update_rects(
             bbox_min_x=float(min_x),
             bbox_max_x=float(max_x),
             bbox_min_y=float(min_y),

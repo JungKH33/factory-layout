@@ -32,7 +32,12 @@ def _edges_to_adj(edges: List[List[Any]]) -> Dict[GroupId, Dict[GroupId, float]]
     return adj
 
 
-def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv:
+def load_env(
+    json_path: str,
+    *,
+    device: torch.device | None = None,
+    collision_check: str | None = None,
+) -> LoadedEnv:
     """Load a FactoryLayoutEnv from a JSON spec file."""
     path = Path(json_path)
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -147,6 +152,7 @@ def load_env(json_path: str, *, device: torch.device | None = None) -> LoadedEnv
         group_flow=flow,
         forbidden_areas=forbidden_areas,
         zone_constraints=zone_constraints,
+        collision_check=str(collision_check or env_cfg.get("collision_check", "auto")),
         reward_scale=float(env_cfg.get("reward_scale", 100.0)),
         penalty_weight=float(env_cfg.get("penalty_weight", 50000.0)),
     )

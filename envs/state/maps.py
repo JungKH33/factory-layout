@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -26,10 +26,16 @@ class GridMaps:
         device: torch.device,
         forbidden_areas: List[Dict[str, Any]],
         zone_constraints: Dict[str, Dict[str, Any]],
+        collision_check: str = "auto",
     ) -> None:
         self._H = int(grid_height)
         self._W = int(grid_width)
         self._device = torch.device(device)
+        self._collision_check = str(collision_check).lower()
+        self._resolved_collision_check = self._resolve_collision_check(
+            self._collision_check,
+            self._device,
+        )
 
         self._static_invalid = self._build_static_invalid(
             self._H,
@@ -58,9 +64,19 @@ class GridMaps:
         self.bbox_min_y = 0.0
         self.bbox_max_y = 0.0
 
-        # Private caches.
+        # Static caches.
         self._group_specs: Dict[GroupId, StaticSpec] = {}
-        self._zone_cache: Dict[GroupId, torch.Tensor] = {}
+        self._zone_invalid_by_gid: Dict[GroupId, torch.Tensor] = {}
+        self._static_invalid_ps: Optional[torch.Tensor] = None
+        self._zone_invalid_ps_by_gid: Dict[GroupId, torch.Tensor] = {}
+
+        # Runtime prefix caches (prefixsum backend only).
+        self._occ_invalid_ps: Optional[torch.Tensor] = None
+        self._clear_invalid_ps: Optional[torch.Tensor] = None
+
+        if self._uses_prefixsum:
+            self._static_invalid_ps = self._build_prefix(self._static_invalid)
+            self._rebuild_runtime_prefix_cache()
 
     @property
     def shape(self) -> Tuple[int, int]:
@@ -73,6 +89,10 @@ class GridMaps:
     @property
     def grid_height(self) -> int:
         return int(self._H)
+
+    @property
+    def collision_check(self) -> str:
+        return str(self._resolved_collision_check)
 
     @property
     def static_invalid(self) -> torch.Tensor:
@@ -88,6 +108,19 @@ class GridMaps:
     def constraint_maps(self) -> Dict[str, torch.Tensor]:
         return self._constraint_maps
 
+    @property
+    def _uses_prefixsum(self) -> bool:
+        return self._resolved_collision_check == "prefixsum"
+
+    @staticmethod
+    def _resolve_collision_check(mode: str, device: torch.device) -> str:
+        m = str(mode).lower()
+        if m not in {"conv", "prefixsum", "auto"}:
+            raise ValueError(f"collision_check must be 'conv'|'prefixsum'|'auto', got {mode!r}")
+        if m != "auto":
+            return m
+        return "conv" if torch.device(device).type == "cuda" else "prefixsum"
+
     @staticmethod
     def _rect_hits_invalid(rect: RectI, src: torch.Tensor) -> bool:
         x0, y0, x1, y1 = rect
@@ -98,6 +131,102 @@ class GridMaps:
             return False
         return bool(torch.any(src[y0:y1, x0:x1]).item())
 
+    @staticmethod
+    def _build_prefix(src: torch.Tensor) -> torch.Tensor:
+        if src.dim() != 2:
+            raise ValueError(f"prefix source must be [H,W], got {tuple(src.shape)}")
+        src_i = src.to(dtype=torch.int32)
+        ps = torch.cumsum(torch.cumsum(src_i, dim=0), dim=1)
+        out = torch.zeros(
+            (int(src_i.shape[0]) + 1, int(src_i.shape[1]) + 1),
+            dtype=torch.int32,
+            device=src_i.device,
+        )
+        out[1:, 1:] = ps
+        return out
+
+    @staticmethod
+    def _build_prefix_batch(src: torch.Tensor) -> torch.Tensor:
+        if src.dim() != 3:
+            raise ValueError(f"prefix batch source must be [N,H,W], got {tuple(src.shape)}")
+        src_i = src.to(dtype=torch.int32)
+        ps = torch.cumsum(torch.cumsum(src_i, dim=1), dim=2)
+        n, h, w = src_i.shape
+        out = torch.zeros((int(n), int(h) + 1, int(w) + 1), dtype=torch.int32, device=src_i.device)
+        out[:, 1:, 1:] = ps
+        return out
+
+    @staticmethod
+    def _window_sum(prefix: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        h = int(height)
+        w = int(width)
+        if h <= 0 or w <= 0:
+            raise ValueError(f"window size must be positive, got ({h},{w})")
+        return prefix[h:, w:] - prefix[:-h, w:] - prefix[h:, :-w] + prefix[:-h, :-w]
+
+    def _rebuild_runtime_prefix_cache(self) -> None:
+        if not self._uses_prefixsum:
+            self._occ_invalid_ps = None
+            self._clear_invalid_ps = None
+            return
+        stacked = torch.stack([self.occ_invalid, self.clear_invalid], dim=0)
+        prefix = self._build_prefix_batch(stacked)
+        self._occ_invalid_ps = prefix[0]
+        self._clear_invalid_ps = prefix[1]
+
+    def _build_zone_invalid_cache(self) -> None:
+        zone_invalid_by_gid: Dict[GroupId, torch.Tensor] = {}
+        for gid, spec in self._group_specs.items():
+            z = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
+            zone_values = dict(getattr(spec, "zone_values", {}) or {})
+            for cname, cmap in self._constraint_maps.items():
+                if cname not in zone_values:
+                    continue
+                op = self._constraint_ops[cname]
+                dtype = self._constraint_dtypes[cname]
+                gval = self._coerce_group_value(zone_values[cname], dtype=dtype, cname=cname)
+                pass_mask = self._compare_constraint(cmap, gval, op=op)
+                z |= (~pass_mask)
+            zone_invalid_by_gid[gid] = z
+        self._zone_invalid_by_gid = zone_invalid_by_gid
+
+        if not self._uses_prefixsum:
+            self._zone_invalid_ps_by_gid = {}
+            return
+        if not zone_invalid_by_gid:
+            self._zone_invalid_ps_by_gid = {}
+            return
+
+        gids = list(zone_invalid_by_gid.keys())
+        stacked = torch.stack([zone_invalid_by_gid[gid] for gid in gids], dim=0)
+        prefix = self._build_prefix_batch(stacked)
+        self._zone_invalid_ps_by_gid = {
+            gid: prefix[idx]
+            for idx, gid in enumerate(gids)
+        }
+
+    def _get_zone_invalid(self, gid: GroupId) -> torch.Tensor:
+        if gid not in self._group_specs:
+            raise KeyError(f"unknown gid={gid!r}")
+        z = self._zone_invalid_by_gid.get(gid, None)
+        if isinstance(z, torch.Tensor):
+            return z
+        raise RuntimeError(
+            f"zone invalid cache miss for gid={gid!r}; "
+            "call bind_group_specs()/_build_zone_invalid_cache() before placement checks"
+        )
+
+    def _get_zone_invalid_ps(self, gid: GroupId) -> torch.Tensor:
+        if gid not in self._group_specs:
+            raise KeyError(f"unknown gid={gid!r}")
+        z = self._zone_invalid_ps_by_gid.get(gid, None)
+        if isinstance(z, torch.Tensor):
+            return z
+        raise RuntimeError(
+            f"zone invalid prefix cache miss for gid={gid!r}; "
+            "call bind_group_specs()/_build_zone_invalid_cache() before placement checks"
+        )
+
     def is_placeable(
         self,
         *,
@@ -105,7 +234,7 @@ class GridMaps:
         body_rect: RectI,
         pad_rect: RectI,
     ) -> bool:
-        invalid = self._static_invalid | self.occ_invalid | self._get_zone_cache(gid)
+        invalid = self._static_invalid | self.occ_invalid | self._get_zone_invalid(gid)
         if self._rect_hits_invalid(body_rect, invalid):
             return False
         if self._rect_hits_invalid(body_rect, self.clear_invalid):
@@ -113,6 +242,74 @@ class GridMaps:
         if self._rect_hits_invalid(pad_rect, invalid):
             return False
         return True
+
+    def _is_placeable_map_conv(
+        self,
+        *,
+        gid: GroupId,
+        body_w: int,
+        body_h: int,
+        cL: int,
+        cR: int,
+        cB: int,
+        cT: int,
+        valid_h: int,
+        valid_w: int,
+    ) -> torch.Tensor:
+        invalid = self._static_invalid | self.occ_invalid | self._get_zone_invalid(gid)
+        kw = int(body_w + cL + cR)
+        kh = int(body_h + cB + cT)
+
+        inv_f = invalid.to(dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        clear_f = self.clear_invalid.to(dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        body_kernel = torch.ones((1, 1, body_h, body_w), device=self._device, dtype=torch.float32)
+        pad_kernel = torch.ones((1, 1, kh, kw), device=self._device, dtype=torch.float32)
+
+        body_inv = F.conv2d(inv_f, body_kernel, padding=0).squeeze(0).squeeze(0)
+        body_clear = F.conv2d(clear_f, body_kernel, padding=0).squeeze(0).squeeze(0)
+        pad_inv = F.conv2d(inv_f, pad_kernel, padding=0).squeeze(0).squeeze(0)
+
+        body_inv_slice = body_inv[cB: cB + valid_h, cL: cL + valid_w]
+        body_clear_slice = body_clear[cB: cB + valid_h, cL: cL + valid_w]
+        return (body_inv_slice == 0) & (body_clear_slice == 0) & (pad_inv == 0)
+
+    def _is_placeable_map_prefix(
+        self,
+        *,
+        gid: GroupId,
+        body_w: int,
+        body_h: int,
+        cL: int,
+        cR: int,
+        cB: int,
+        cT: int,
+        valid_h: int,
+        valid_w: int,
+    ) -> torch.Tensor:
+        if self._static_invalid_ps is None or self._occ_invalid_ps is None or self._clear_invalid_ps is None:
+            raise RuntimeError("prefixsum backend requires runtime/static prefix caches")
+
+        kw = int(body_w + cL + cR)
+        kh = int(body_h + cB + cT)
+        zone_ps = self._get_zone_invalid_ps(gid)
+
+        pad_static = self._window_sum(self._static_invalid_ps, kh, kw)
+        pad_occ = self._window_sum(self._occ_invalid_ps, kh, kw)
+        pad_zone = self._window_sum(zone_ps, kh, kw)
+        pad_hit = pad_static + pad_occ + pad_zone
+
+        body_static = self._window_sum(self._static_invalid_ps, body_h, body_w)
+        body_occ = self._window_sum(self._occ_invalid_ps, body_h, body_w)
+        body_zone = self._window_sum(zone_ps, body_h, body_w)
+        body_clear = self._window_sum(self._clear_invalid_ps, body_h, body_w)
+
+        body_hit = (
+            body_static[cB: cB + valid_h, cL: cL + valid_w]
+            + body_occ[cB: cB + valid_h, cL: cL + valid_w]
+            + body_zone[cB: cB + valid_h, cL: cL + valid_w]
+            + body_clear[cB: cB + valid_h, cL: cL + valid_w]
+        )
+        return (pad_hit == 0) & (body_hit == 0)
 
     def is_placeable_map(
         self,
@@ -131,43 +328,63 @@ class GridMaps:
         cR = int(cR)
         cB = int(cB)
         cT = int(cT)
-        invalid = self._static_invalid | self.occ_invalid | self._get_zone_cache(gid)
-        kw = int(w + cL + cR)
-        kh = int(h + cB + cT)
 
-        H, W = invalid.shape
+        H, W = self.shape
         result = torch.zeros((H, W), dtype=torch.bool, device=self._device)
-        if kh > H or kw > W or h <= 0 or w <= 0:
+        if h <= 0 or w <= 0:
             return result
 
-        inv_f = invalid.to(dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        clear_f = self.clear_invalid.to(dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        body_kernel = torch.ones((1, 1, h, w), device=self._device, dtype=torch.float32)
-        pad_kernel = torch.ones((1, 1, kh, kw), device=self._device, dtype=torch.float32)
-
-        body_inv = F.conv2d(inv_f, body_kernel, padding=0).squeeze()
-        body_clear = F.conv2d(clear_f, body_kernel, padding=0).squeeze()
-        pad_inv = F.conv2d(inv_f, pad_kernel, padding=0).squeeze()
+        kw = int(w + cL + cR)
+        kh = int(h + cB + cT)
+        if kh > H or kw > W or kh <= 0 or kw <= 0:
+            return result
 
         valid_h = H - kh + 1
         valid_w = W - kw + 1
         if valid_h <= 0 or valid_w <= 0:
             return result
-        body_inv_slice = body_inv[cB: cB + valid_h, cL: cL + valid_w]
-        body_clear_slice = body_clear[cB: cB + valid_h, cL: cL + valid_w]
-        valid_mask = (body_inv_slice == 0) & (body_clear_slice == 0) & (pad_inv == 0)
+
+        if self._resolved_collision_check == "conv":
+            valid_mask = self._is_placeable_map_conv(
+                gid=gid,
+                body_w=w,
+                body_h=h,
+                cL=cL,
+                cR=cR,
+                cB=cB,
+                cT=cT,
+                valid_h=valid_h,
+                valid_w=valid_w,
+            )
+        elif self._resolved_collision_check == "prefixsum":
+            valid_mask = self._is_placeable_map_prefix(
+                gid=gid,
+                body_w=w,
+                body_h=h,
+                cL=cL,
+                cR=cR,
+                cB=cB,
+                cT=cT,
+                valid_h=valid_h,
+                valid_w=valid_w,
+            )
+        else:
+            raise RuntimeError(f"unsupported collision backend: {self._resolved_collision_check!r}")
+
         result[:valid_h, :valid_w] = valid_mask
         return result
 
     def bind_group_specs(self, group_specs: Dict[GroupId, StaticSpec]) -> None:
         self._group_specs = group_specs
-        self._build_zone_cache()
+        self._build_zone_invalid_cache()
 
     def copy(self) -> "GridMaps":
         out = object.__new__(GridMaps)
         out._H = self._H
         out._W = self._W
         out._device = self._device
+        out._collision_check = self._collision_check
+        out._resolved_collision_check = self._resolved_collision_check
 
         out.occ_invalid = self.occ_invalid.clone()
         out.clear_invalid = self.clear_invalid.clone()
@@ -183,7 +400,16 @@ class GridMaps:
         out._constraint_ops = self._constraint_ops
         out._constraint_dtypes = self._constraint_dtypes
         out._group_specs = self._group_specs
-        out._zone_cache = self._zone_cache
+        out._zone_invalid_by_gid = self._zone_invalid_by_gid
+        out._static_invalid_ps = self._static_invalid_ps
+        out._zone_invalid_ps_by_gid = self._zone_invalid_ps_by_gid
+
+        if self._uses_prefixsum:
+            out._occ_invalid_ps = self._occ_invalid_ps
+            out._clear_invalid_ps = self._clear_invalid_ps
+        else:
+            out._occ_invalid_ps = None
+            out._clear_invalid_ps = None
         return out
 
     def restore(self, src: "GridMaps") -> None:
@@ -202,6 +428,9 @@ class GridMaps:
         self.bbox_max_x = float(src.bbox_max_x)
         self.bbox_min_y = float(src.bbox_min_y)
         self.bbox_max_y = float(src.bbox_max_y)
+        if self._uses_prefixsum:
+            self._occ_invalid_ps = src._occ_invalid_ps
+            self._clear_invalid_ps = src._clear_invalid_ps
 
     def reset_runtime(self) -> None:
         self.occ_invalid.zero_()
@@ -211,8 +440,10 @@ class GridMaps:
         self.bbox_max_x = 0.0
         self.bbox_min_y = 0.0
         self.bbox_max_y = 0.0
+        if self._uses_prefixsum:
+            self._rebuild_runtime_prefix_cache()
 
-    def paint_rects(
+    def update_rects(
         self,
         *,
         bbox_min_x: float,
@@ -254,6 +485,28 @@ class GridMaps:
         if cx0 < cx1 and cy0 < cy1:
             self.clear_invalid[cy0:cy1, cx0:cx1] = True
 
+        if self._uses_prefixsum:
+            self._rebuild_runtime_prefix_cache()
+
+    def paint_rects(
+        self,
+        *,
+        bbox_min_x: float,
+        bbox_max_x: float,
+        bbox_min_y: float,
+        bbox_max_y: float,
+        body_rect: RectI,
+        clear_rect: RectI,
+    ) -> None:
+        self.update_rects(
+            bbox_min_x=bbox_min_x,
+            bbox_max_x=bbox_max_x,
+            bbox_min_y=bbox_min_y,
+            bbox_max_y=bbox_max_y,
+            body_rect=body_rect,
+            clear_rect=clear_rect,
+        )
+
     def placed_bbox(self) -> Tuple[float, float, float, float]:
         if not self.has_bbox:
             return 0.0, 0.0, 0.0, 0.0
@@ -262,34 +515,6 @@ class GridMaps:
             float(self.bbox_max_x),
             float(self.bbox_min_y),
             float(self.bbox_max_y),
-        )
-
-    def _build_zone_cache(self) -> None:
-        zone_cache: Dict[GroupId, torch.Tensor] = {}
-        for gid, spec in self._group_specs.items():
-            z = torch.zeros((self._H, self._W), dtype=torch.bool, device=self._device)
-            zone_values = dict(getattr(spec, "zone_values", {}) or {})
-            for cname, cmap in self._constraint_maps.items():
-                if cname not in zone_values:
-                    # Group에 값이 없으면 해당 제약은 무시.
-                    continue
-                op = self._constraint_ops[cname]
-                dtype = self._constraint_dtypes[cname]
-                gval = self._coerce_group_value(zone_values[cname], dtype=dtype, cname=cname)
-                pass_mask = self._compare_constraint(cmap, gval, op=op)
-                z |= (~pass_mask)
-            zone_cache[gid] = z
-        self._zone_cache = zone_cache
-
-    def _get_zone_cache(self, gid: GroupId) -> torch.Tensor:
-        if gid not in self._group_specs:
-            raise KeyError(f"unknown gid={gid!r}")
-        z = self._zone_cache.get(gid, None)
-        if isinstance(z, torch.Tensor):
-            return z
-        raise RuntimeError(
-            f"zone cache miss for gid={gid!r}; "
-            "call bind_group_specs()/_build_zone_cache() before placement checks"
         )
 
     @staticmethod

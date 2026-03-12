@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 class SessionCreateRequest(BaseModel):
     env_json: str = "converters/test.json"
+    collision_check: str = "auto"  # auto | conv | prefixsum
     wrapper_mode: str = "greedyv3"  # greedy | greedyv2 | greedyv3 | alphachip | maskplace
     agent_mode: str = "greedy"  # greedy | alphachip | maskplace
     search_mode: str = "none"  # none | mcts | beam
