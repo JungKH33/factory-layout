@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any, Dict, List, Tuple
 
 import torch
 
 from .base import PlacementBase
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class StaticPlacement(PlacementBase):
@@ -48,6 +51,30 @@ class StaticSpec:
     clearance_top_rel: int
     rotatable: bool = True
     zone_values: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Validate spec dimensions and flag ports outside the local pre-rotation box.
+        self.width = int(self.width)
+        self.height = int(self.height)
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError(
+                f"StaticSpec {self.id!r} must have positive width/height, "
+                f"got width={self.width}, height={self.height}"
+            )
+
+        invalid_ports: List[str] = []
+        bounds = f"[0, {self.width}] x [0, {self.height}]"
+        for port_type, ports in (("entry", self.entries_rel), ("exit", self.exits_rel)):
+            for idx, port in enumerate(ports):
+                x, y = float(port[0]), float(port[1])
+                if x < 0.0 or x > float(self.width) or y < 0.0 or y > float(self.height):
+                    invalid_ports.append(f"{port_type}[{idx}]=({x}, {y})")
+
+        if invalid_ports:
+            logger.warning(
+                f"StaticSpec {self.id!r} has ports outside local bounds {bounds}: "
+                + ", ".join(invalid_ports)
+            )
 
     @staticmethod
     def _norm_rot(rot: int) -> int:

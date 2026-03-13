@@ -6,10 +6,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .pathfinder import RouteResult, RoutePlanner
+
+logger = logging.getLogger(__name__)
 
 
 def routes_to_dict(results: List[RouteResult]) -> List[Dict[str, Any]]:
@@ -97,17 +100,17 @@ def print_summary(planner: RoutePlanner) -> None:
         planner: RoutePlanner 인스턴스
     """
     summary = planner.get_summary()
-    
-    print("=" * 50)
-    print("Route Planning Summary")
-    print("=" * 50)
-    print(f"Total flows: {summary['total_flows']}")
-    print(f"Success: {summary['success_count']}")
-    print(f"Failed: {summary['fail_count']}")
-    print(f"Total cost: {summary['total_cost']:.2f}")
-    
+
+    logger.info("=" * 50)
+    logger.info("Route Planning Summary")
+    logger.info("=" * 50)
+    logger.info("Total flows: %s", summary["total_flows"])
+    logger.info("Success: %s", summary["success_count"])
+    logger.info("Failed: %s", summary["fail_count"])
+    logger.info("Total cost: %.2f", summary["total_cost"])
+
     if summary['failed_flows']:
-        print("\nFailed flows:")
+        logger.info("Failed flows:")
         for src, dst in summary['failed_flows']:
-            print(f"  - {src} -> {dst}")
-    print("=" * 50)
+            logger.info("  - %s -> %s", src, dst)
+    logger.info("=" * 50)

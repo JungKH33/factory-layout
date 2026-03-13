@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from pathlib import Path
 
 import time
@@ -65,9 +66,16 @@ SHOW_FLOW: bool = True
 SHOW_SCORE: bool = True
 SHOW_MASKS: bool = True
 
+logger = logging.getLogger(__name__)
+
 
 @torch.no_grad()
 def main() -> None:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
@@ -168,8 +176,15 @@ def main() -> None:
     step = 0
     frames: list[StepFrame] = []
 
-    print("[inference]")
-    print(" ENV_JSON=", ENV_JSON, "WRAPPER_MODE=", WRAPPER_MODE, "AGENT_MODE=", AGENT_MODE, "SEARCH_MODE=", SEARCH_MODE, "device=", device)
+    logger.info("[inference]")
+    logger.info(
+        "ENV_JSON=%s WRAPPER_MODE=%s AGENT_MODE=%s SEARCH_MODE=%s device=%s",
+        ENV_JSON,
+        WRAPPER_MODE,
+        AGENT_MODE,
+        SEARCH_MODE,
+        device,
+    )
 
     while not (terminated or truncated):
         step += 1
@@ -222,31 +237,57 @@ def main() -> None:
         obs_env = obs_env_next
         total_reward += float(reward)
         if action is None:
-            print(f"[step] {step} next_gid={next_gid} search={SEARCH_MODE} reason=no_valid_actions")
+            logger.warning(
+                "[step] %s next_gid=%s search=%s reason=no_valid_actions",
+                step,
+                next_gid,
+                SEARCH_MODE,
+            )
         else:
-            print(
-                f"[step] {step} next_gid={next_gid} search={dbg.get('search', SEARCH_MODE)} "
-                f"action=({int(action.x)},{int(action.y)},{int(action.rot)})"
+            logger.info(
+                "[step] %s next_gid=%s search=%s action=(%s,%s,%s)",
+                step,
+                next_gid,
+                dbg.get("search", SEARCH_MODE),
+                int(action.x),
+                int(action.y),
+                int(action.rot),
             )
 
         if terminated or truncated:
             reason = info.get("reason", None)
-            print(
-                f"[env] end: terminated={terminated} truncated={truncated} "
-                f"step={step} placed={len(engine.get_state().placed)} cost={engine.total_cost():.3f} reason={reason}"
+            logger.info(
+                "[env] end: terminated=%s truncated=%s step=%s placed=%s cost=%.3f reason=%s",
+                terminated,
+                truncated,
+                step,
+                len(engine.get_state().placed),
+                engine.total_cost(),
+                reason,
             )
 
     end = time.perf_counter()
-    print(f"Total computation time: {end - start:.4f} seconds")
-    print(f"episode_reward={total_reward:.3f} terminated={terminated} truncated={truncated}")
+    logger.info("Total computation time: %.4f seconds", end - start)
+    logger.info(
+        "episode_reward=%.3f terminated=%s truncated=%s",
+        total_reward,
+        terminated,
+        truncated,
+    )
 
     # Print top-K results if tracking was enabled
     if search is not None and hasattr(search, "top_tracker") and search.top_tracker is not None:
         top_results = search.top_tracker.get_results()
         if top_results:
-            print(f"\n[Top-{len(top_results)} Search Results]")
+            logger.info("[Top-%s Search Results]", len(top_results))
             for i, result in enumerate(top_results):
-                print(f"  #{i+1}: cost={result.cost:.2f}, placed={len(result.positions)}, cum_reward={result.cum_reward:.3f}")
+                logger.info(
+                    "#%s: cost=%.2f, placed=%s, cum_reward=%.3f",
+                    i + 1,
+                    result.cost,
+                    len(result.positions),
+                    result.cum_reward,
+                )
 
     out_dir = Path("results") / "inference"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -277,12 +318,12 @@ def main() -> None:
         action_space=None,
         save_path=str(out_path),
     )
-    print(f"saved_layout={out_path}")
+    logger.info("saved_layout=%s", out_path)
     
     # Save placement JSON
     placement_path = out_dir / f"{ts}_{AGENT_MODE}_{WRAPPER_MODE}_{SEARCH_MODE}.json"
     engine.save_placement(str(placement_path))
-    print(f"saved_placement={placement_path}")
+    logger.info("saved_placement=%s", placement_path)
 
     # Save top-K results if tracking was enabled
     if search is not None and hasattr(search, "top_tracker") and search.top_tracker is not None:
@@ -299,7 +340,7 @@ def main() -> None:
                 action_space=None,
                 save_path=str(top_path),
             )
-            print(f"saved_top_{i+1}={top_path}")
+            logger.info("saved_top_%s=%s", i + 1, top_path)
 
 
 if __name__ == "__main__":

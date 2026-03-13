@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from pathlib import Path
 import uuid
 from typing import Any, Dict, Optional, Tuple
@@ -38,6 +39,8 @@ from tianshou.utils.net.common import AbstractDiscreteActor, ModuleWithVectorOut
 from agents.maskplace import MaskPlaceModel
 from envs.env_loader import load_env
 from decision_adapters.maskplace import MaskPlaceDecisionAdapter
+
+logger = logging.getLogger(__name__)
 
 
 # -----------------------------
@@ -522,6 +525,11 @@ def save_ckpt(*, path: Path, model: nn.Module, meta: Dict[str, Any]) -> None:
 
 
 def main() -> None:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        )
     cfg = parse_args()
     make_env_fn, meta = build_env_factory(cfg=cfg)
     algo, train_collector, test_collector, model, _action_space = build_algo_and_collectors(cfg=cfg, make_env_fn=make_env_fn)
@@ -596,8 +604,8 @@ def main() -> None:
     )
     trainer = OnPolicyTrainer(algorithm=algo, params=params)
     stats = trainer.run()
-    print("Training finished:", stats)
-    print(f"checkpoint_dir={ckpt_dir}")
+    logger.info("Training finished: %s", stats)
+    logger.info("checkpoint_dir=%s", ckpt_dir)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import heapq
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -12,6 +13,8 @@ from envs.state import EnvState
 
 from agents.base import Agent
 from envs.action_space import ActionSpace as CandidateSet
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -107,9 +110,12 @@ class TopKTracker:
         if changed and self.verbose:
             worst_cost = -self._heap[0][0] if self._heap else float("inf")
             best_cost = self.best_cost()
-            print(
-                f"[TopK] New result: cost={result.cost:.2f} | "
-                f"Top-{len(self._heap)} range: [{best_cost:.2f} ~ {worst_cost:.2f}]"
+            logger.info(
+                "[TopK] New result: cost=%.2f | Top-%d range: [%.2f ~ %.2f]",
+                result.cost,
+                len(self._heap),
+                best_cost,
+                worst_cost,
             )
 
         return changed

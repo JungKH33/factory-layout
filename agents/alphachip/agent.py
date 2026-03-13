@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,8 @@ from envs.action_space import ActionSpace as CandidateSet
 from agents.base import Agent
 
 from .model import AlphaChip
+
+logger = logging.getLogger(__name__)
 
 
 def _obs_to_pyg_data(obs: dict) -> Data:
@@ -54,7 +57,11 @@ class AlphaChipAgent:
             self._load_checkpoint(self.checkpoint_path)
 
         # One-time info (requested): AlphaChip expects coarse actionspace.
-        print(f"[info] AlphaChipAgent expects coarse actionspace: N={self.coarse_grid * self.coarse_grid} (G={self.coarse_grid})")
+        logger.info(
+            "AlphaChipAgent expects coarse actionspace: N=%d (G=%d)",
+            self.coarse_grid * self.coarse_grid,
+            self.coarse_grid,
+        )
 
     def _load_checkpoint(self, checkpoint_path: str) -> None:
         path = Path(checkpoint_path)
@@ -67,9 +74,9 @@ class AlphaChipAgent:
         self.model.load_state_dict(state)
         self.model.eval()
         meta = obj.get("meta") if isinstance(obj, dict) else None
-        print(f"[alphachip_agent] loaded_checkpoint={path}")
+        logger.info("[alphachip_agent] loaded_checkpoint=%s", path)
         if isinstance(meta, dict):
-            print(f"[alphachip_agent] checkpoint_meta={meta}")
+            logger.info("[alphachip_agent] checkpoint_meta=%s", meta)
 
     @torch.no_grad()
     def policy(self, *, obs: dict, action_space: CandidateSet) -> torch.Tensor:

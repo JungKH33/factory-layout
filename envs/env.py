@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -21,6 +22,8 @@ from .state import EnvState, FlowGraph, GridMaps
 # PlacementBase is defined in envs/base.py and imported above.
 # Re-exported here so external code can do: from envs.env import PlacementBase, GridMaps
 __all__ = ["PlacementBase", "GridMaps", "FactoryLayoutEnv"]
+
+logger = logging.getLogger(__name__)
 
 
 class FactoryLayoutEnv(gym.Env):
@@ -431,14 +434,18 @@ class FactoryLayoutEnv(gym.Env):
         reward = self.failure_penalty()
         info: Dict[str, Any] = {"reason": reason}
 
-        if self.log:
-            base_cost = float(self.cost())
-            penalty = float(self._terminal.penalty(self._state))
-            total_cost = base_cost + penalty
-            print(
-                f"[env] fail: reason={reason} remaining={len(self._state.remaining)} "
-                f"cost={total_cost:.3f} (base={base_cost:.3f} + penalty={penalty:.3f}) reward={reward:.3f}"
-            )
+        base_cost = float(self.cost())
+        penalty = float(self._terminal.penalty(self._state))
+        total_cost = base_cost + penalty
+        logger.warning(
+            "[env] fail: reason=%s remaining=%d cost=%.3f (base=%.3f + penalty=%.3f) reward=%.3f",
+            reason,
+            len(self._state.remaining),
+            total_cost,
+            base_cost,
+            penalty,
+            reward,
+        )
 
         return self.build_observation(), float(reward), False, True, info
 
@@ -520,12 +527,17 @@ class FactoryLayoutEnv(gym.Env):
         info: Dict[str, Any] = {"reason": "placed"}
 
         # 5. 로깅
-        if self.log and (terminated or truncated):
+        if terminated or truncated:
             total_cost = self.total_cost()
-            print(
-                f"[env] end: terminated={terminated} truncated={truncated} "
-                f"remaining={len(self._state.remaining)} placed={len(self._state.placed)} step={self._state.step_count} "
-                f"cost={total_cost:.3f} reason=placed reward={reward:.3f}"
+            logger.info(
+                "[env] end: terminated=%s truncated=%s remaining=%d placed=%d step=%d cost=%.3f reason=placed reward=%.3f",
+                terminated,
+                truncated,
+                len(self._state.remaining),
+                len(self._state.placed),
+                self._state.step_count,
+                total_cost,
+                reward,
             )
 
         return self.build_observation(), float(reward), bool(terminated), bool(truncated), info

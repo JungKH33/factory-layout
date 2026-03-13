@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -17,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 # Thread pool for running sync search in background
 _search_executor = ThreadPoolExecutor(max_workers=2)
+logger = logging.getLogger(__name__)
 
 from envs.action_space import ActionSpace as CandidateSet
 from decision_adapters.greedy import GreedyDecisionAdapter
@@ -204,14 +206,12 @@ async def get_agent_params(name: str):
 async def create_session(req: SessionCreateRequest):
     """Create a new session."""
     try:
-        print(f"[DEBUG] create_session request: {req}")
+        logger.debug("create_session request: %s", req)
         session = await manager.create_session(req)
         state = session.get_state()
         return {"session_id": session.sid, "state": state.model_dump()}
     except Exception as e:
-        import traceback
-        print(f"[ERROR] create_session failed: {e}")
-        traceback.print_exc()
+        logger.exception("create_session failed")
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -535,8 +535,8 @@ async def _broadcast_progress(session: Session, progress, callback) -> None:
             progress.best_action,
         )
         await asyncio.sleep(0.001)  # Small yield to allow other tasks
-    except Exception as e:
-        print(f"[WebUI] Progress broadcast error: {e}")
+    except Exception:
+        logger.warning("[WebUI] Progress broadcast error", exc_info=True)
 
 
 @app.delete("/api/session/{sid}")

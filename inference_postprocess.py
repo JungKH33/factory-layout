@@ -10,6 +10,7 @@ inference.py와 유사한 파이프라인을 사용하되, DynamicStorageEnv를 
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from pathlib import Path
 from typing import Dict, List
 
@@ -100,6 +101,8 @@ SHOW_FLOW: bool = True
 SHOW_SCORE: bool = True
 SHOW_MASKS: bool = True
 
+logger = logging.getLogger(__name__)
+
 
 # ============================================================
 # Main
@@ -107,22 +110,27 @@ SHOW_MASKS: bool = True
 
 @torch.no_grad()
 def main() -> None:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device("cpu")  # CPU 강제 (디버깅용)
     
-    print("=" * 60)
-    print("Inference Postprocess - Dynamic Storage Placement")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Inference Postprocess - Dynamic Storage Placement")
+    logger.info("=" * 60)
     
     # ===== 1. Base 환경 로드 =====
-    print(f"\n[1] Loading base environment: {BASE_ENV_JSON}")
+    logger.info("[1] Loading base environment: %s", BASE_ENV_JSON)
     loaded = load_env(BASE_ENV_JSON, device=device)
     base_env = loaded.env
     base_env.reset(options=loaded.reset_kwargs)
     
-    print(f"  Grid: {base_env.grid_width} x {base_env.grid_height}")
-    print(f"  Placed groups: {len(base_env.get_state().placed)}")
-    print(f"  Remaining groups: {len(base_env.get_state().remaining)}")
+    logger.info("Grid: %s x %s", base_env.grid_width, base_env.grid_height)
+    logger.info("Placed groups: %s", len(base_env.get_state().placed))
+    logger.info("Remaining groups: %s", len(base_env.get_state().remaining))
     
     # ===== 1.5. 기존 그룹 미리 배치 (하드코딩) =====
     # (gid, x, y, rot) 형식
@@ -141,32 +149,37 @@ def main() -> None:
     ]
     
     if PRE_PLACEMENTS:
-        print(f"\n[1.5] Pre-placing {len(PRE_PLACEMENTS)} groups (hardcoded)")
+        logger.info("[1.5] Pre-placing %s groups (hardcoded)", len(PRE_PLACEMENTS))
         for gid, x, y, rot in PRE_PLACEMENTS:
             if gid in base_env.get_state().remaining:
                 _obs, _reward, _terminated, _truncated, info = base_env.step_action(
                     EnvAction(gid=gid, x=int(x), y=int(y), rot=int(rot))
                 )
                 if info.get("reason") == "placed":
-                    print(f"    Placed: {gid} at ({x}, {y}), rot={rot}")
+                    logger.info("Placed: %s at (%s, %s), rot=%s", gid, x, y, rot)
                 else:
-                    print(f"    Failed to pre-place {gid}: reason={info.get('reason')}")
+                    logger.warning("Failed to pre-place %s: reason=%s", gid, info.get("reason"))
             else:
-                print(f"    Skip: {gid} not in remaining (or already placed)")
+                logger.info("Skip: %s not in remaining (or already placed)", gid)
         
-        print(f"  Now placed: {list(base_env.get_state().placed)}")
+        logger.info("Now placed: %s", list(base_env.get_state().placed))
     
     # ===== 2. Storage 설정 =====
-    print(f"\n[2] Storage configuration")
+    logger.info("[2] Storage configuration")
     configs = [DynamicGroupConfig(**cfg) for cfg in STORAGE_CONFIGS]
     
     for cfg in configs:
-        print(f"  - {cfg.gid}: {cfg.total_cells} cells, "
-              f"{cfg.cell_width}x{cfg.cell_depth}, "
-              f"rotatable={cfg.rotatable}")
+        logger.info(
+            "- %s: %s cells, %sx%s, rotatable=%s",
+            cfg.gid,
+            cfg.total_cells,
+            cfg.cell_width,
+            cfg.cell_depth,
+            cfg.rotatable,
+        )
     
     # ===== 3. Flow 설정 =====
-    print(f"\n[3] Flow configuration")
+    logger.info("[3] Flow configuration")
     if GROUP_FLOW is not None:
         group_flow = GROUP_FLOW
     else:
@@ -187,10 +200,10 @@ def main() -> None:
                 group_flow.setdefault(gid, {})[cfg.gid] = 1.0
                 group_flow[cfg.gid][gid] = 1.0
     
-    print(f"  Group flow: {group_flow}")
+    logger.info("Group flow: %s", group_flow)
     
     # ===== 4. Dynamic Env 생성 =====
-    print(f"\n[4] Creating DynamicStorageEnv")
+    logger.info("[4] Creating DynamicStorageEnv")
     dynamic_env = DynamicStorageEnv(
         base_env=base_env,
         configs=configs,
@@ -198,7 +211,7 @@ def main() -> None:
     )
     
     # ===== 5. Wrapper 적용 =====
-    print(f"\n[5] Creating DynamicStorageWrapper (k={TOPK_K})")
+    logger.info("[5] Creating DynamicStorageWrapper (k=%s)", TOPK_K)
     env = DynamicStorageWrapper(
         dynamic_env=dynamic_env,
         k=TOPK_K,
@@ -206,12 +219,12 @@ def main() -> None:
     )
     
     # ===== 6. Agent & Search =====
-    print(f"\n[6] Setting up Agent and Search")
+    logger.info("[6] Setting up Agent and Search")
     agent = GreedyAgent(prior_temperature=1.0)
     
     if SEARCH_MODE == "none":
         search = None
-        print("  Search: None (greedy)")
+        logger.info("Search: None (greedy)")
     elif SEARCH_MODE == "mcts":
         search = MCTSSearch(
             config=MCTSConfig(
@@ -220,17 +233,19 @@ def main() -> None:
                 rollout_depth=ROLLOUT_DEPTH,
             )
         )
-        print(f"  Search: MCTS (sims={MCTS_SIMS})")
+        logger.info("Search: MCTS (sims=%s)", MCTS_SIMS)
     else:
         raise ValueError(f"Unknown SEARCH_MODE: {SEARCH_MODE}")
 
     if search is not None:
-        print("  [warn] DynamicStorageWrapper does not support env-owned search after pipeline refactor; fallback to no-search.")
+        logger.warning(
+            "DynamicStorageWrapper does not support env-owned search after pipeline refactor; fallback to no-search."
+        )
         search = None
     
     # ===== 7. 실행 =====
-    print(f"\n[7] Running inference")
-    print("=" * 60)
+    logger.info("[7] Running inference")
+    logger.info("=" * 60)
     
     obs, info = env.reset()
     terminated = truncated = False
@@ -252,7 +267,7 @@ def main() -> None:
             terminated = False
             truncated = True
             info = {"reason": "no_valid_actions"}
-            print(f"[step {step}] gid={current_gid}, reason=no_valid_actions")
+            logger.warning("[step %s] gid=%s, reason=no_valid_actions", step, current_gid)
             total_reward += float(reward)
             break
         action = int(agent.select_action(obs=obs_decision, action_space=action_space))
@@ -261,25 +276,33 @@ def main() -> None:
         
         # 로그
         x, y, rot, _, _ = env.decode_action(int(action))
-        print(f"[step {step}] gid={current_gid}, action={action}, "
-              f"pos=({x},{y}), rot={rot}, "
-              f"units={info.get('num_units', 0)}, cells={info.get('total_cells', 0)}, "
-              f"reward={reward:.3f}")
+        logger.info(
+            "[step %s] gid=%s, action=%s, pos=(%s,%s), rot=%s, units=%s, cells=%s, reward=%.3f",
+            step,
+            current_gid,
+            action,
+            x,
+            y,
+            rot,
+            info.get("num_units", 0),
+            info.get("total_cells", 0),
+            reward,
+        )
         
         if terminated:
-            print(f"\n[DONE] All storage groups placed!")
+            logger.info("[DONE] All storage groups placed!")
         elif truncated:
-            print(f"\n[TRUNCATED] reason={info.get('reason', 'unknown')}")
+            logger.warning("[TRUNCATED] reason=%s", info.get("reason", "unknown"))
     
     end = time.perf_counter()
     
-    print("=" * 60)
-    print(f"Total time: {end - start:.3f}s")
-    print(f"Total steps: {step}")
-    print(f"Total reward: {total_reward:.3f}")
+    logger.info("=" * 60)
+    logger.info("Total time: %.3fs", end - start)
+    logger.info("Total steps: %s", step)
+    logger.info("Total reward: %.3f", total_reward)
     
     # ===== 8. 시각화 =====
-    print(f"\n[8] Visualization")
+    logger.info("[8] Visualization")
     
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
@@ -363,7 +386,7 @@ def main() -> None:
     out_path = out_dir / f"{ts}_storage.png"
     
     plt.savefig(out_path, dpi=150)
-    print(f"  Saved: {out_path}")
+    logger.info("Saved: %s", out_path)
     
     plt.show()
 

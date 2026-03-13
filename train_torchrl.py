@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from pathlib import Path
 import uuid
 from typing import Any, Dict, Optional, Tuple
@@ -32,6 +33,8 @@ import time
 from agents.maskplace import MaskPlaceModel
 from envs.env_loader import load_env
 from decision_adapters.maskplace import MaskPlaceDecisionAdapter
+
+logger = logging.getLogger(__name__)
 
 
 def _require_torchrl() -> None:
@@ -267,6 +270,11 @@ class MaskPlaceValueNet(nn.Module):
 
 
 def main() -> None:
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        )
     _require_torchrl()
     cfg = parse_args()
     device = torch.device(cfg.device)
@@ -300,10 +308,14 @@ def main() -> None:
             missing = list(getattr(msg, "missing_keys", []))
             unexpected = list(getattr(msg, "unexpected_keys", []))
             if (not cfg.load_strict) and (missing or unexpected):
-                print(f"[load_ckpt] strict=False missing_keys={missing} unexpected_keys={unexpected}")
+                logger.warning(
+                    "[load_ckpt] strict=False missing_keys=%s unexpected_keys=%s",
+                    missing,
+                    unexpected,
+                )
         except Exception:
             pass
-        print(f"[load_ckpt] loaded: {cfg.load_ckpt}")
+        logger.info("[load_ckpt] loaded: %s", cfg.load_ckpt)
     # IMPORTANT: during rollout/collection, keep the model in eval mode to avoid BatchNorm
     # issues with batched execution in some TorchRL collector paths.
     model.eval()
@@ -463,7 +475,7 @@ def main() -> None:
                 },
                 str(best),
             )
-            print(f"[best] updated best_mean_reward={best_score:.6f}")
+            logger.info("[best] updated best_mean_reward=%.6f", best_score)
 
         rb.empty()
 
@@ -472,8 +484,8 @@ def main() -> None:
 
         i += 1
 
-    print("Training finished.")
-    print(f"checkpoint_dir={ckpt_dir}")
+    logger.info("Training finished.")
+    logger.info("checkpoint_dir=%s", ckpt_dir)
     pbar.close()
 
 

@@ -5,11 +5,14 @@ Usage:
 """
 from __future__ import annotations
 
-import json
-import math
 import argparse
+import json
+import logging
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 def load_json(path: str) -> Dict[str, Any]:
@@ -230,10 +233,19 @@ def calculate_cluster_size_2d(
         
         # Debug output for problematic cases
         if iteration < 5 or iteration % 10 == 0:
-            print(f"  [DEBUG] {group_id} iter={iteration}: {n_cols}x{n_rows}, "
-                  f"cluster={cluster_width:.0f}x{cluster_height:.0f}mm, "
-                  f"factory={factory_width:.0f}x{factory_height:.0f}mm, "
-                  f"fits_0={fits_0deg}, fits_90={fits_90deg}")
+            logger.debug(
+                "%s iter=%d: %dx%d, cluster=%.0fx%.0fmm, factory=%.0fx%.0fmm, fits_0=%s, fits_90=%s",
+                group_id,
+                iteration,
+                n_cols,
+                n_rows,
+                cluster_width,
+                cluster_height,
+                factory_width,
+                factory_height,
+                fits_0deg,
+                fits_90deg,
+            )
         
         # Increase rows/cols to make cluster smaller
         # Try to balance the dimensions
@@ -248,7 +260,7 @@ def calculate_cluster_size_2d(
         
         # Safety check
         if n_rows > 50 or n_cols > 50:
-            print(f"[WARN] {group_id} arrangement exceeded 50 rows/cols: {n_cols}x{n_rows}")
+            logger.warning("%s arrangement exceeded 50 rows/cols: %dx%d", group_id, n_cols, n_rows)
             break
     
     # Final calculation
@@ -259,8 +271,14 @@ def calculate_cluster_size_2d(
     fits_0 = cluster_width <= factory_width and cluster_height <= factory_height
     fits_90 = cluster_height <= factory_width and cluster_width <= factory_height
     if not fits_0 and not fits_90:
-        print(f"[WARN] {group_id} cluster {cluster_width:.0f}x{cluster_height:.0f}mm "
-              f"doesn't fit in factory {factory_width:.0f}x{factory_height:.0f}mm in any orientation!")
+        logger.warning(
+            "%s cluster %.0fx%.0fmm doesn't fit in factory %.0fx%.0fmm in any orientation",
+            group_id,
+            cluster_width,
+            cluster_height,
+            factory_width,
+            factory_height,
+        )
     
     return (cluster_width, cluster_height, n_cols, n_rows)
 
@@ -302,7 +320,7 @@ def build_groups(
         facility_count = len(facility_ids)
         
         if not facility_ids:
-            print(f"[WARN] Group {group_id} has no facilities, skipping")
+            logger.warning("Group %s has no facilities, skipping", group_id)
             continue
         
         # Select representative facility (first one)
@@ -344,9 +362,9 @@ def build_groups(
             # Also swap clearances for 90° CCW rotation:
             # new_L=old_T, new_R=old_B, new_B=old_L, new_T=old_R
             UL, UR, UB, UA = UA, UB, UL, UR
-            print(f"  [INFO] {group_id} swapped to 90° orientation (only fits rotated)")
+            logger.info("%s swapped to 90° orientation (only fits rotated)", group_id)
         elif not can_rotate and facility_count > 1:
-            print(f"  [INFO] {group_id} rotatable=False (only fits in one orientation)")
+            logger.info("%s rotatable=False (only fits in one orientation)", group_id)
         
         # Scale to grid units
         width = cluster_width / scale
@@ -437,7 +455,7 @@ def build_flow(
         
         for dst_group in fac.get("nextFacilityGroup", []):
             if dst_group not in valid_group_ids:
-                print(f"[WARN] Flow target {dst_group} not in valid groups, skipping")
+                logger.warning("Flow target %s not in valid groups, skipping", dst_group)
                 continue
             if src_group != dst_group:
                 flow_set.add((src_group, dst_group))
@@ -570,12 +588,12 @@ def build_initial_positions(
         fac_id = fp["facilityId"]
         fac = facility_dict.get(fac_id)
         if fac is None:
-            print(f"[WARN] Fixed position for unknown facility {fac_id}, skipping")
+            logger.warning("Fixed position for unknown facility %s, skipping", fac_id)
             continue
         
         group_id = fac.get("facilityGroup")
         if group_id is None:
-            print(f"[WARN] Facility {fac_id} has no facilityGroup, skipping")
+            logger.warning("Facility %s has no facilityGroup, skipping", fac_id)
             continue
         
         pos = fp["position"]
@@ -586,7 +604,7 @@ def build_initial_positions(
         if group_id not in initial_positions:
             initial_positions[group_id] = [x, y, rot]
         else:
-            print(f"[INFO] Group {group_id} already has initial position, skipping {fac_id}")
+            logger.info("Group %s already has initial position, skipping %s", group_id, fac_id)
     
     return initial_positions
 
@@ -693,10 +711,14 @@ def validate_and_adjust_groups(
         
         if not problematic_groups:
             if iteration > 0:
-                print(f"[INFO] All groups have placeable positions (after {iteration} adjustments)")
+                logger.info("All groups have placeable positions after %d adjustments", iteration)
             break
         
-        print(f"[WARN] Iteration {iteration}: {len(problematic_groups)} groups have no placeable position")
+        logger.warning(
+            "Iteration %d: %d groups have no placeable position",
+            iteration,
+            len(problematic_groups),
+        )
         
         # rows/cols 조정
         for gid in problematic_groups:
@@ -715,14 +737,19 @@ def validate_and_adjust_groups(
             
             # 안전 체크
             if n_rows > 50 or n_cols > 50:
-                print(f"[WARN] {gid} arrangement exceeded 50: {n_cols}x{n_rows}, skipping")
+                logger.warning("%s arrangement exceeded 50: %dx%d, skipping", gid, n_cols, n_rows)
                 continue
             
             # 재계산 (함수 재사용)
             old_size, new_size = recalculate_group_size(group, n_cols, n_rows, scale)
-            print(f"[INFO] Adjusted {gid}: "
-                  f"{group['_n_cols']}x{group['_n_rows']} cols/rows, "
-                  f"size: {old_size} -> {new_size}")
+            logger.info(
+                "Adjusted %s: %dx%d cols/rows, size: %s -> %s",
+                gid,
+                group["_n_cols"],
+                group["_n_rows"],
+                old_size,
+                new_size,
+            )
     
     return env_data
 
@@ -742,7 +769,7 @@ def convert_sma_to_env(
     Returns:
         Converted env data
     """
-    print(f"[INFO] Loading {input_path}")
+    logger.info("Loading %s", input_path)
     data = load_json(input_path)
     
     scale = grid_size
@@ -753,12 +780,12 @@ def convert_sma_to_env(
     factory_height = factory_dim["height"]
     grid_width = int(factory_width / scale)
     grid_height = int(factory_height / scale)
-    print(f"[INFO] Factory: {factory_width}x{factory_height} mm -> {grid_width}x{grid_height} grid")
+    logger.info("Factory: %sx%s mm -> %sx%s grid", factory_width, factory_height, grid_width, grid_height)
     
     # Facility dict
     facilities = data["facilities"]
     facility_dict = build_facility_dict(facilities)
-    print(f"[INFO] Facilities: {len(facilities)}")
+    logger.info("Facilities: %d", len(facilities))
     
     # Groups (pass factory dimensions for 2D arrangement calculation)
     facility_groups = data.get("facilityGroups", [])
@@ -766,20 +793,26 @@ def convert_sma_to_env(
         facility_groups, facility_dict, scale,
         factory_width, factory_height
     )
-    print(f"[INFO] Groups: {len(groups)}")
+    logger.info("Groups: %d", len(groups))
     
     # Print group summary
     for gid, g in groups.items():
         arrangement = f"{g['_n_cols']}x{g['_n_rows']}" if g['_facility_count'] > 1 else "1x1"
-        print(f"  - {gid}: {g['_facility_count']} facilities ({arrangement}), "
-              f"cluster={g['width']:.1f}x{g['height']:.1f}, "
-              f"type={g['_type']}")
+        logger.info(
+            "  - %s: %d facilities (%s), cluster=%.1fx%.1f, type=%s",
+            gid,
+            g["_facility_count"],
+            arrangement,
+            g["width"],
+            g["height"],
+            g["_type"],
+        )
     
     valid_group_ids = set(groups.keys())
     
     # Flow
     flow = build_flow(facilities, valid_group_ids)
-    print(f"[INFO] Flow edges: {len(flow)}")
+    logger.info("Flow edges: %d", len(flow))
     
     # Zones (forbidden, placement, height, weight, dry)
     forbidden_areas = data.get("forbiddenAreas", [])
@@ -796,18 +829,18 @@ def convert_sma_to_env(
         default_dry=factory_dim.get("dry", None),
         default_placeable=0,
     )
-    print(f"[INFO] Forbidden areas: {len(zones.get('forbidden_areas', []))}")
+    logger.info("Forbidden areas: %d", len(zones.get("forbidden_areas", [])))
     constraints = zones.get("constraints", {})
-    print(f"[INFO] Constraints: {len(constraints) if isinstance(constraints, dict) else 0}")
+    logger.info("Constraints: %d", len(constraints) if isinstance(constraints, dict) else 0)
     if isinstance(constraints, dict):
         for cname, cfg in constraints.items():
             areas = cfg.get("areas", []) if isinstance(cfg, dict) else []
-            print(f"  - {cname}: areas={len(areas)}")
+            logger.info("  - %s: areas=%d", cname, len(areas))
     
     # Initial positions
     fixed_positions = data.get("fixedFacilityPositions", [])
     initial_positions = build_initial_positions(fixed_positions, facility_dict, scale)
-    print(f"[INFO] Initial positions: {len(initial_positions)}")
+    logger.info("Initial positions: %d", len(initial_positions))
     
     # Build output
     env_data = {
@@ -829,17 +862,23 @@ def convert_sma_to_env(
         env_data["reset"]["initial_positions"] = initial_positions
     
     # Validate and adjust groups if needed
-    print(f"\n[INFO] Validating placeable positions...")
+    logger.info("Validating placeable positions...")
     env_data = validate_and_adjust_groups(env_data, initial_positions, scale)
     
     # Save
     save_json(env_data, output_path)
-    print(f"[INFO] Saved to {output_path}")
+    logger.info("Saved to %s", output_path)
     
     return env_data
 
 
 def main():
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        )
+
     parser = argparse.ArgumentParser(description="Convert SMA JSON to Factory Layout Env JSON")
     parser.add_argument("input", help="Input SMA JSON file path")
     parser.add_argument("output", help="Output Env JSON file path")
