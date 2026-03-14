@@ -11,17 +11,11 @@ import torch
 
 from envs.env_loader import load_env
 from envs.state import EnvState
-from decision_adapters.greedy import GreedyDecisionAdapter
-from decision_adapters.greedyv2 import GreedyV2DecisionAdapter
-from decision_adapters.greedyv3 import GreedyV3DecisionAdapter
-from decision_adapters.alphachip import AlphaChipDecisionAdapter
-from decision_adapters.maskplace import MaskPlaceDecisionAdapter
 from envs.action_space import ActionSpace as CandidateSet
-
-from agents.greedy import GreedyAgent
-from ordering_agents import DifficultyOrderingAgent
-from agents.alphachip.agent import AlphaChipAgent
-from agents.maskplace import MaskPlaceAgent
+from agents.placement.greedy import GreedyAgent, GreedyAdapter, GreedyV2Adapter, GreedyV3Adapter
+from agents.placement.alphachip import AlphaChipAgent, AlphaChipAdapter
+from agents.placement.maskplace import MaskPlaceAgent, MaskPlaceAdapter
+from agents.ordering import DifficultyOrderingAgent
 
 from search.mcts import MCTSConfig, MCTSSearch
 from search.beam import BeamConfig, BeamSearch
@@ -346,7 +340,7 @@ class SessionManager:
                         for k, v in params.items() if k.startswith('wrapper_')}
         
         if req.wrapper_mode == "greedy":
-            env = GreedyDecisionAdapter(
+            env = GreedyAdapter(
                 k=wrapper_params.get('k', 50),
                 scan_step=wrapper_params.get('scan_step', 2000.0),
                 quant_step=wrapper_params.get('quant_step', 10.0),
@@ -357,7 +351,7 @@ class SessionManager:
                 random_seed=42,
             )
         elif req.wrapper_mode == "greedyv2":
-            env = GreedyV2DecisionAdapter(
+            env = GreedyV2Adapter(
                 k=wrapper_params.get('k', 50),
                 scan_step=wrapper_params.get('scan_step', 2000.0),
                 quant_step=wrapper_params.get('quant_step', 10.0),
@@ -368,7 +362,7 @@ class SessionManager:
                 random_seed=42,
             )
         elif req.wrapper_mode == "greedyv3":
-            env = GreedyV3DecisionAdapter(
+            env = GreedyV3Adapter(
                 k=wrapper_params.get('k', 50),
                 quant_step=wrapper_params.get('quant_step', 10.0),
                 oversample_factor=wrapper_params.get('oversample_factor', 2),
@@ -376,12 +370,12 @@ class SessionManager:
                 random_seed=42,
             )
         elif req.wrapper_mode == "alphachip":
-            env = AlphaChipDecisionAdapter(
+            env = AlphaChipAdapter(
                 coarse_grid=wrapper_params.get('coarse_grid', 128),
                 rot=0,
             )
         elif req.wrapper_mode == "maskplace":
-            env = MaskPlaceDecisionAdapter(
+            env = MaskPlaceAdapter(
                 grid=wrapper_params.get('grid', 224),
                 rot=0,
                 soft_coefficient=wrapper_params.get('soft_coefficient', 1.0),

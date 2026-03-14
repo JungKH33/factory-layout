@@ -9,11 +9,11 @@ import torch.nn.functional as F
 
 from envs.env import FactoryLayoutEnv, GroupId
 
-from .base import BaseDecisionAdapter
+from ...base import BaseAdapter
 from envs.action_space import ActionSpace
 
 
-class MaskPlaceDecisionAdapter(BaseDecisionAdapter):
+class MaskPlaceAdapter(BaseAdapter):
     """MaskPlace dense-grid wrapper: Discrete(G*G) actions (default G=224).
 
     Obs provides:
@@ -281,7 +281,7 @@ if __name__ == "__main__":
     engine = loaded.env
     engine.log = False
 
-    adapter = MaskPlaceDecisionAdapter(grid=224, rot=0)
+    adapter = MaskPlaceAdapter(grid=224, rot=0)
 
     t0 = time.perf_counter()
     _obs_env, _info = engine.reset(options=loaded.reset_kwargs)
@@ -325,7 +325,7 @@ if __name__ == "__main__":
     else:
         plot_layout(engine, action_space=None)
 
-    print("MaskPlaceDecisionAdapter demo")
+    print("MaskPlaceAdapter demo")
     print(" env=", ENV_JSON, "device=", device, "grid=", adapter.grid)
     print(" valid_actions=", valid, "first_valid_action=", a, "plotted=", int(xy.shape[0]))
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")

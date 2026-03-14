@@ -36,9 +36,8 @@ from tianshou.env import DummyVectorEnv
 from tianshou.trainer import OnPolicyTrainer, OnPolicyTrainerParams  # type: ignore
 from tianshou.utils.net.common import AbstractDiscreteActor, ModuleWithVectorOutput  # type: ignore
 
-from agents.maskplace import MaskPlaceModel
+from agents.placement.maskplace import MaskPlaceModel, MaskPlaceAdapter
 from envs.env_loader import load_env
-from decision_adapters.maskplace import MaskPlaceDecisionAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -443,7 +442,7 @@ def build_env_factory(*, cfg: TrainConfig) -> Tuple[Any, Dict[str, Any]]:
         engine = loaded.env
         engine.log = False
         if cfg.mode == "maskplace":
-            env = MaskPlaceDecisionAdapter(
+            env = MaskPlaceAdapter(
                 engine=engine,
                 grid=int(cfg.grid),
                 rot=int(cfg.rot),
@@ -453,9 +452,9 @@ def build_env_factory(*, cfg: TrainConfig) -> Tuple[Any, Dict[str, Any]]:
             env._reset_kwargs = reset_kwargs  # type: ignore[attr-defined]
             env = NumpyObsWrapper(env, state_uint8=bool(cfg.state_uint8))
         elif cfg.mode == "alphachip":
-            from decision_adapters.alphachip import AlphaChipDecisionAdapter
+            from agents.placement.alphachip import AlphaChipAdapter
 
-            env = AlphaChipDecisionAdapter(engine=engine, coarse_grid=int(cfg.coarse_grid), rot=int(cfg.alphachip_rot))
+            env = AlphaChipAdapter(engine=engine, coarse_grid=int(cfg.coarse_grid), rot=int(cfg.alphachip_rot))
             env._reset_kwargs = reset_kwargs  # type: ignore[attr-defined]
             env = NumpyObsWrapper(env, state_uint8=False)
         else:
@@ -478,7 +477,7 @@ def build_algo_and_collectors(*, cfg: TrainConfig, make_env_fn) -> Tuple[PPO, Co
         actor = MaskPlaceActor(model, action_dim=action_dim)
         critic = MaskPlaceCritic(model)
     elif cfg.mode == "alphachip":
-        from agents.alphachip.model import AlphaChip
+        from agents.placement.alphachip import AlphaChip
 
         model = AlphaChip(
             metadata_dim=12,

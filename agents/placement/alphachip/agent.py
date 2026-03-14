@@ -10,7 +10,7 @@ import torch
 from torch_geometric.data import Data
 
 from envs.action_space import ActionSpace as CandidateSet
-from agents.base import Agent
+from ...base import Agent
 
 from .model import AlphaChip
 

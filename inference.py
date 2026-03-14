@@ -15,17 +15,8 @@ from pipeline import DecisionPipeline
 from search.beam import BeamConfig, BeamSearch
 from search.mcts import MCTSConfig, MCTSSearch
 
-from agents.greedy import GreedyAgent
-from ordering_agents import DifficultyOrderingAgent
-from agents.alphachip.agent import AlphaChipAgent
-from agents.maskplace import MaskPlaceAgent
-
-from decision_adapters.greedy import GreedyDecisionAdapter
-from decision_adapters.greedyv2 import GreedyV2DecisionAdapter
-from decision_adapters.greedyv3 import GreedyV3DecisionAdapter
-
-from decision_adapters.alphachip import AlphaChipDecisionAdapter
-from decision_adapters.maskplace import MaskPlaceDecisionAdapter
+from agents.registry import create as create_agent
+from agents.ordering import DifficultyOrderingAgent
 from envs.action_space import ActionSpace as CandidateSet
 
 
@@ -82,57 +73,25 @@ def main() -> None:
     engine = loaded.env
     engine.log = True
 
-    if WRAPPER_MODE == "greedy":
-        adapter = GreedyDecisionAdapter(
-            k=TOPK_K,
-            scan_step=TOPK_SCAN_STEP,
-            quant_step=TOPK_QUANT_STEP,
-            random_seed=5,
-        )
-    elif WRAPPER_MODE == "greedyv2":
-        adapter = GreedyV2DecisionAdapter(
-            k=TOPK_K,
-            scan_step=TOPK_SCAN_STEP,
-            quant_step=TOPK_QUANT_STEP,
-            random_seed=5,
-        )
-
-    elif WRAPPER_MODE == "greedyv3":
-        adapter = GreedyV3DecisionAdapter(
-            quant_step=TOPK_QUANT_STEP,
-            k=TOPK_K,
-            oversample_factor=2,
-            edge_ratio=0.8,
-            random_seed=5,
-        )
-
-    elif WRAPPER_MODE == "alphachip":
-        adapter = AlphaChipDecisionAdapter(coarse_grid=int(ALPHACHIP_GRID), rot=0)
-    elif WRAPPER_MODE == "maskplace":
-        # Defaults are fixed here (per request): grid=224, rot=0, soft_coefficient=1.0
-        adapter = MaskPlaceDecisionAdapter(grid=224, rot=0, soft_coefficient=1.0)
-    else:
-        raise ValueError(f"Unknown WRAPPER_MODE={WRAPPER_MODE!r} (expected 'greedy'|'alphachip'|'maskplace')")
-
-    if AGENT_MODE == "greedy":
-        agent = GreedyAgent(prior_temperature=1.0)
-    elif AGENT_MODE == "alphachip":
-        if WRAPPER_MODE != "alphachip":
-            raise ValueError("AlphaChipAgent supports WRAPPER_MODE='alphachip' only.")
-        if not ALPHACHIP_CHECKPOINT_PATH:
-            raise ValueError("ALPHACHIP_CHECKPOINT_PATH must be set when AGENT_MODE='alphachip'.")
-        agent = AlphaChipAgent(coarse_grid=int(ALPHACHIP_GRID), checkpoint_path=str(ALPHACHIP_CHECKPOINT_PATH), device=device)
-    elif AGENT_MODE == "maskplace":
-        if WRAPPER_MODE != "maskplace":
-            raise ValueError("MaskPlaceAgent supports WRAPPER_MODE='maskplace' only.")
-        agent = MaskPlaceAgent(
-            device=device,
-            grid=224,
-            soft_coefficient=1.0,
-            checkpoint_path=str(MASKPLACE_CHECKPOINT_PATH) if MASKPLACE_CHECKPOINT_PATH else None,
-        )
-    else:
-        raise ValueError(f"Unknown AGENT_MODE={AGENT_MODE!r} (expected 'greedy'|'alphachip'|'maskplace')")
+    adapter_kwargs: dict = {
+        "greedy": {"k": TOPK_K, "scan_step": TOPK_SCAN_STEP, "quant_step": TOPK_QUANT_STEP, "random_seed": 5},
+        "greedyv2": {"k": TOPK_K, "scan_step": TOPK_SCAN_STEP, "quant_step": TOPK_QUANT_STEP, "random_seed": 5},
+        "greedyv3": {"k": TOPK_K, "quant_step": TOPK_QUANT_STEP, "oversample_factor": 2, "edge_ratio": 0.8, "random_seed": 5},
+        "alphachip": {"coarse_grid": int(ALPHACHIP_GRID), "rot": 0},
+        "maskplace": {"grid": 224, "rot": 0, "soft_coefficient": 1.0},
+    }
+    agent_kwargs: dict = {
+        "greedy": {"prior_temperature": 1.0},
+        "alphachip": {"coarse_grid": int(ALPHACHIP_GRID), "checkpoint_path": str(ALPHACHIP_CHECKPOINT_PATH), "device": device},
+        "maskplace": {"device": device, "grid": 224, "soft_coefficient": 1.0,
+                      "checkpoint_path": str(MASKPLACE_CHECKPOINT_PATH) if MASKPLACE_CHECKPOINT_PATH else None},
+    }
+    agent, adapter = create_agent(
+        method=WRAPPER_MODE,
+        agent=AGENT_MODE,
+        agent_kwargs=agent_kwargs.get(AGENT_MODE, {}),
+        adapter_kwargs=adapter_kwargs.get(WRAPPER_MODE, {}),
+    )
 
     if SEARCH_MODE == "none":
         search = None

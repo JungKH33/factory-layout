@@ -21,14 +21,11 @@ _search_executor = ThreadPoolExecutor(max_workers=2)
 logger = logging.getLogger(__name__)
 
 from envs.action_space import ActionSpace as CandidateSet
-from decision_adapters.greedy import GreedyDecisionAdapter
-from decision_adapters.greedyv2 import GreedyV2DecisionAdapter
-from decision_adapters.greedyv3 import GreedyV3DecisionAdapter
-from decision_adapters.alphachip import AlphaChipDecisionAdapter
-from decision_adapters.maskplace import MaskPlaceDecisionAdapter
+from agents.placement.greedy import GreedyAgent, GreedyAdapter, GreedyV2Adapter, GreedyV3Adapter
+from agents.placement.alphachip import AlphaChipAdapter
+from agents.placement.maskplace import MaskPlaceAdapter
 from search.mcts import MCTSConfig
 from search.beam import BeamConfig
-from agents.greedy import GreedyAgent
 from envs.action import EnvAction
 from envs.state import EnvState
 
@@ -108,11 +105,11 @@ def _extract_params(cls, exclude: set = None) -> Dict[str, Dict[str, Any]]:
 
 # Registry of components and their classes
 WRAPPER_CLASSES = {
-    "greedy": GreedyDecisionAdapter,
-    "greedyv2": GreedyV2DecisionAdapter,
-    "greedyv3": GreedyV3DecisionAdapter,
-    "alphachip": AlphaChipDecisionAdapter,
-    "maskplace": MaskPlaceDecisionAdapter,
+    "greedy": GreedyAdapter,
+    "greedyv2": GreedyV2Adapter,
+    "greedyv3": GreedyV3Adapter,
+    "alphachip": AlphaChipAdapter,
+    "maskplace": MaskPlaceAdapter,
 }
 
 SEARCH_CLASSES = {

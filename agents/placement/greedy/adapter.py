@@ -9,10 +9,10 @@ import gymnasium as gym
 import torch
 
 from envs.env import FactoryLayoutEnv, GroupId
-from .base import BaseDecisionAdapter
+from ...base import BaseAdapter
 
 
-class GreedyDecisionAdapter(BaseDecisionAdapter):
+class GreedyAdapter(BaseAdapter):
     """Top-K candidate wrapper: Discrete(K) actions over an in-file TopK generator.
 
     Notes:
@@ -458,7 +458,7 @@ if __name__ == "__main__":
     engine = loaded.env
     engine.log = False
 
-    adapter = GreedyDecisionAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    adapter = GreedyAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
 
     t0 = time.perf_counter()
     _obs_env, _info = engine.reset(options=loaded.reset_kwargs)
@@ -486,7 +486,7 @@ if __name__ == "__main__":
     else:
         plot_layout(engine, action_space=None)
 
-    print("GreedyDecisionAdapter demo")
+    print("GreedyAdapter demo")
     print(" env=", ENV_JSON, "device=", device, "k=", 50)
     print(" valid_actions=", valid, "first_valid_action=", a)
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")

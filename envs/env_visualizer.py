@@ -1074,8 +1074,8 @@ if __name__ == "__main__":
     # - Shows zone overlays and interactive toggles (show=True only).
     import torch
 
-    from decision_adapters.alphachip import AlphaChipDecisionAdapter
-    from decision_adapters.greedy import GreedyDecisionAdapter
+    from agents.placement.alphachip import AlphaChipAdapter
+    from agents.placement.greedy import GreedyAdapter
     from envs.env import FactoryLayoutEnv
     from envs.placement.static import StaticSpec
 
@@ -1139,13 +1139,13 @@ if __name__ == "__main__":
 
     # ---- 1) Coarse wrapper demo ----
     # For coarse, we just visualize the current layout (candidate visualization via decode is omitted in demo).
-    env1 = AlphaChipDecisionAdapter(engine=engine, coarse_grid=32, rot=0)
+    env1 = AlphaChipAdapter(engine=engine, coarse_grid=32, rot=0)
     _obs1, _ = env1.reset(options={"initial_positions": initial_positions, "remaining_order": remaining_order})
     plot_layout(env1, action_space=None)
     plot_flow_graph(env1)
 
     # ---- 2) Greedy(TopK) wrapper demo ----
-    env2 = GreedyDecisionAdapter(
+    env2 = GreedyAdapter(
         engine=engine,
         k=70,
         scan_step=5.0,

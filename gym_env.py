@@ -3,11 +3,11 @@
 Usage::
 
     from envs.env_loader import load_env
-    from decision_adapters.maskplace import MaskPlaceDecisionAdapter
-    from decision_adapters.gym_env import AdapterGymEnv
+    from agents.placement.maskplace import MaskPlaceAdapter
+    from gym_env import AdapterGymEnv
 
     loaded = load_env("envs/env_configs/basic_01.json", device=device)
-    adapter = MaskPlaceDecisionAdapter(grid=224, rot=0)
+    adapter = MaskPlaceAdapter(grid=224, rot=0)
     env = AdapterGymEnv(engine=loaded.env, adapter=adapter,
                         reset_kwargs=loaded.reset_kwargs)
     obs, info = env.reset()
@@ -22,7 +22,7 @@ import gymnasium as gym
 import torch
 
 from envs.env import FactoryLayoutEnv
-from .base import BaseDecisionAdapter
+from agents.base import BaseAdapter
 
 
 class AdapterGymEnv(gym.Env):
@@ -43,7 +43,7 @@ class AdapterGymEnv(gym.Env):
         self,
         *,
         engine: FactoryLayoutEnv,
-        adapter: BaseDecisionAdapter,
+        adapter: BaseAdapter,
         reset_kwargs: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()

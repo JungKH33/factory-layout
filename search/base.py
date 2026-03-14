@@ -8,10 +8,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from decision_adapters.base import BaseDecisionAdapter
+from agents.base import Agent, BaseAdapter
 from envs.state import EnvState
-
-from agents.base import Agent
 from envs.action_space import ActionSpace as CandidateSet
 
 logger = logging.getLogger(__name__)
@@ -40,9 +38,9 @@ class BaseSearch(ABC):
         self.top_tracker: Optional[TopKTracker] = None
         self._progress_callback: Optional[ProgressCallback] = None
         self._progress_interval: int = 10
-        self.adapter: Optional[BaseDecisionAdapter] = None
+        self.adapter: Optional[BaseAdapter] = None
 
-    def set_adapter(self, adapter: BaseDecisionAdapter) -> None:
+    def set_adapter(self, adapter: BaseAdapter) -> None:
         self.adapter = adapter
     
     def set_progress_callback(

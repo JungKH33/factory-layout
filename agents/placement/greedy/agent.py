@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import torch
 
 from envs.action_space import ActionSpace as CandidateSet
-from .base import Agent
+from ...base import Agent
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     import time
 
     from envs.env_loader import load_env
-    from decision_adapters.greedy import GreedyDecisionAdapter
+    from agents.placement.greedy.adapter import GreedyAdapter
     from envs.action_space import ActionSpace as CandidateSet
 
     ENV_JSON = "envs/env_configs/basic_01.json"
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
-    adapter = GreedyDecisionAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    adapter = GreedyAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
     engine.reset(options=loaded.reset_kwargs)
     adapter.bind(engine)
     obs = adapter.build_observation()

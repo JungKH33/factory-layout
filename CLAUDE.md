@@ -25,7 +25,7 @@ python -m preprocess.to_env input.json output.json
 # Quick smoke tests (individual modules have __main__ blocks)
 python -m envs.env
 python -m envs.placement.static
-python -m decision_adapters.greedyv3
+python -m agents.placement.greedy.adapter_v3
 ```
 
 There are no automated tests or a lint config. Validation is done by running the demo `__main__` blocks in individual modules.
@@ -35,34 +35,50 @@ There are no automated tests or a lint config. Validation is done by running the
 ### Layered stack (bottom → top)
 
 ```
-envs/env_configs/*.json          ← problem definition (grid, facilities, flow, zones)
+envs/env_configs/*.json                      ← problem definition (grid, facilities, flow, zones)
        ↓  env_loader.py
-envs/env.py                      ← FactoryLayoutEnv (single production Gymnasium env)
+envs/env.py                                  ← FactoryLayoutEnv (single production Gymnasium env)
        ↓
-decision_adapters/greedyv3.py    ← generates ActionSpace(xyrot[K,3], mask[K]) from engine state
+agents/placement/greedy/adapter_v3.py        ← generates ActionSpace(xyrot[K,3], mask[K]) from engine state
+agents/placement/greedy/agent.py             ← policy: argmin(Δcost) over candidates
+search/mcts.py                               ← optional tree search over adapter
        ↓
-agents/greedy.py                 ← policy: argmin(Δcost) over candidates
-search/mcts.py                   ← optional tree search over adapter
+pipeline.py                                  ← DecisionPipeline(adapter, agent, search) — ties it together
        ↓
-pipeline.py                      ← DecisionPipeline(adapter, agent, search) — ties it together
-       ↓
-inference.py                     ← episode loop, visualization, output
+inference.py                                 ← episode loop, visualization, output (uses agents.registry)
 ```
 
-### Decision adapters (replaces old `envs/wrappers/`)
+### Agents package (`agents/`)
 
-Decision adapters (`decision_adapters/`) are **not** Gymnasium envs. They are pure stateless-ish adapters that:
+Each method lives in its own subpackage with its agent + adapter bundled together:
+
+```
+agents/
+  base.py              ← Agent(Protocol), OrderingAgent(Protocol), BaseAdapter(ABC)
+  registry.py          ← create(method, agent=...) factory + compatibility matrix
+  placement/
+    greedy/            ← GreedyAgent + GreedyAdapter/V2/V3
+      agent.py, adapter.py, adapter_v2.py, adapter_v3.py
+    maskplace/         ← MaskPlaceAgent + MaskPlaceAdapter + MaskPlaceModel
+      agent.py, adapter.py, model.py
+    alphachip/         ← AlphaChipAgent + AlphaChipAdapter + model/gnn
+      agent.py, adapter.py, model.py, gnn.py
+  ordering/            ← DifficultyOrderingAgent
+    difficulty.py
+```
+
+**Registry**: `agents.registry.create(method, agent=..., agent_kwargs=..., adapter_kwargs=...)` creates valid (agent, adapter) pairs. GreedyAgent is compatible with all adapters; MaskPlace/AlphaChip agents require their specific adapters.
+
+**Observation ownership**: Each adapter defines its own `build_observation()` format. The engine does NOT build observations — `step_action()` and `reset()` return `{}` for obs. Call order: `build_observation()` → `build_action_space()` (mask is created in obs, reused in action_space).
+
+**Adapters** are **not** Gymnasium envs. They are pure stateless-ish adapters that:
+- `build_observation()` → model-specific dict (greedy returns `{}`, AlphaChip returns graph tensors, etc.)
 - `build_action_space()` → `ActionSpace(xyrot, mask)` from current engine state
 - `decode_action(index, action_space)` → `EnvAction(gid, x, y, rot)`
-- `build_observation()` → model-specific dict (greedy returns `{}`, AlphaChip returns graph tensors, etc.)
-
-**Observation ownership**: Each adapter defines its own observation format. The engine (`FactoryLayoutEnv`) does NOT build observations — `step_action()` and `reset()` return `{}` for obs. Adapters call engine state APIs directly to build what they need.
 
 The pipeline calls `engine.step_action(action)` directly — adapters never step the env themselves.
 
-For RL training, `AdapterGymEnv` (`decision_adapters/gym_env.py`) wraps engine + adapter into a `gym.Env` with proper `step()`/`reset()` that returns adapter observations with `action_mask`.
-
-Available adapters: `GreedyDecisionAdapter`, `GreedyV2DecisionAdapter`, `GreedyV3DecisionAdapter` (recommended), `AlphaChipDecisionAdapter`, `MaskPlaceDecisionAdapter`.
+For RL training, `AdapterGymEnv` (`gym_env.py`) wraps engine + adapter into a `gym.Env` with proper `step()`/`reset()` that returns adapter observations with `action_mask`.
 
 ### Env internal state
 

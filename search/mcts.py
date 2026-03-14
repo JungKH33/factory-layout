@@ -9,9 +9,8 @@ import torch
 
 from envs.env import FactoryLayoutEnv
 from envs.state import EnvState
-from decision_adapters.base import BaseDecisionAdapter
+from agents.base import Agent, BaseAdapter
 from envs.action_space import ActionSpace as CandidateSet
-from agents.base import Agent
 from search.base import BaseSearch, SearchProgress, SearchResult, TopKTracker
 
 
@@ -246,7 +245,7 @@ class MCTSSearch(BaseSearch):
         )
         self._emit_progress(progress)
 
-    def _get_engine_state(self, *, engine: FactoryLayoutEnv, adapter: BaseDecisionAdapter) -> EnvState:
+    def _get_engine_state(self, *, engine: FactoryLayoutEnv, adapter: BaseAdapter) -> EnvState:
         """Snapshot current engine state.
 
         The base implementation only copies the engine state.  Adapter state
@@ -260,7 +259,7 @@ class MCTSSearch(BaseSearch):
         self,
         *,
         engine: FactoryLayoutEnv,
-        adapter: BaseDecisionAdapter,
+        adapter: BaseAdapter,
         engine_state: EnvState,
     ) -> None:
         """Restore engine to a previously captured state.
@@ -276,7 +275,7 @@ class MCTSSearch(BaseSearch):
         self,
         *,
         engine: FactoryLayoutEnv,
-        adapter: BaseDecisionAdapter,
+        adapter: BaseAdapter,
         action: int,
         action_space: CandidateSet,
     ):
@@ -295,7 +294,7 @@ class MCTSSearch(BaseSearch):
         _, reward, terminated, truncated, info = engine.step_action(placement)
         return float(reward), bool(terminated), bool(truncated), info
 
-    def _track_terminal(self, *, engine: FactoryLayoutEnv, adapter: BaseDecisionAdapter, cum_reward: float) -> None:
+    def _track_terminal(self, *, engine: FactoryLayoutEnv, adapter: BaseAdapter, cum_reward: float) -> None:
         """Track terminal state if tracking is enabled."""
         if self.top_tracker is None:
             return
@@ -338,7 +337,7 @@ class MCTSSearch(BaseSearch):
         self,
         *,
         agent: Agent,
-        adapter: BaseDecisionAdapter,
+        adapter: BaseAdapter,
         obs: dict,
         action_space: CandidateSet,
     ) -> torch.Tensor:
@@ -370,7 +369,7 @@ class MCTSSearch(BaseSearch):
         self,
         *,
         engine: FactoryLayoutEnv,
-        adapter: BaseDecisionAdapter,
+        adapter: BaseAdapter,
         root: _Node,
         agent: Agent,
     ) -> None:
@@ -475,7 +474,7 @@ class MCTSSearch(BaseSearch):
         self,
         *,
         engine: FactoryLayoutEnv,
-        adapter: BaseDecisionAdapter,
+        adapter: BaseAdapter,
         agent: Agent,
         path_reward_offset: float = 0.0,
     ) -> float:
@@ -516,8 +515,7 @@ if __name__ == "__main__":
     import time
 
     from envs.env_loader import load_env
-    from agents.greedy import GreedyAgent
-    from decision_adapters.greedy import GreedyDecisionAdapter
+    from agents.placement.greedy import GreedyAgent, GreedyAdapter
 
     ENV_JSON = "envs/env_configs/basic_01.json"
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -526,7 +524,7 @@ if __name__ == "__main__":
     engine = loaded.env
     engine.log = False
 
-    adapter = GreedyDecisionAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    adapter = GreedyAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
     obs_env, _info = engine.reset(options=loaded.reset_kwargs)
     adapter.bind(engine)
     obs = adapter.build_observation()

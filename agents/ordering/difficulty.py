@@ -31,4 +31,3 @@ class DifficultyOrderingAgent:
 
         ordering.sort(key=lambda t: (-t[0], -t[1], str(t[2])))
         env.reorder_remaining([gid for _diff, _area, gid in ordering])
-

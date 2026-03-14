@@ -8,10 +8,10 @@ import torch
 
 from envs.env import FactoryLayoutEnv, GroupId
 
-from .base import BaseDecisionAdapter
+from ...base import BaseAdapter
 
 
-class AlphaChipDecisionAdapter(BaseDecisionAdapter):
+class AlphaChipAdapter(BaseAdapter):
     """AlphaChip-style coarse action wrapper: Discrete(G*G) actions.
 
     Provides:
@@ -301,7 +301,7 @@ if __name__ == "__main__":
     engine = loaded.env
     engine.log = False
 
-    adapter = AlphaChipDecisionAdapter(coarse_grid=32, rot=0)
+    adapter = AlphaChipAdapter(coarse_grid=32, rot=0)
 
     t0 = time.perf_counter()
     _obs_env, _info = engine.reset(options=loaded.reset_kwargs)
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     else:
         plot_layout(engine, action_space=None)
 
-    print("AlphaChipDecisionAdapter demo")
+    print("AlphaChipAdapter demo")
     print(" env=", ENV_JSON, "device=", device, "G=", adapter.coarse_grid)
     print(" valid_actions=", valid, "first_valid_action=", a)
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")

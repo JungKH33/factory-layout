@@ -23,7 +23,7 @@ from envs.env_visualizer import plot_layout, save_layout, _draw_layout_layers
 
 from search.mcts import MCTSConfig, MCTSSearch
 
-from agents.greedy import GreedyAgent
+from agents.placement.greedy import GreedyAgent
 
 from postprocess.dynamic_env import DynamicStorageEnv, DynamicGroupConfig
 from postprocess.dynamic_wrapper import DynamicStorageWrapper

@@ -3,11 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from agents.base import Agent
+from agents.base import Agent, BaseAdapter, OrderingAgent
 from envs.action import EnvAction
 from envs.env import FactoryLayoutEnv
-from decision_adapters.base import BaseDecisionAdapter
-from ordering_agents.base import OrderingAgent
 from search.base import BaseSearch
 
 
@@ -22,7 +20,7 @@ class DecisionPipeline:
     """
 
     agent: Agent
-    adapter: BaseDecisionAdapter
+    adapter: BaseAdapter
     search: Optional[BaseSearch] = None
     ordering_agent: Optional[OrderingAgent] = None
 
@@ -78,16 +76,15 @@ if __name__ == "__main__":
     import torch
 
     from envs.env_loader import load_env
-    from agents.greedy import GreedyAgent
+    from agents.placement.greedy import GreedyAgent, GreedyAdapter
     from search.mcts import MCTSConfig, MCTSSearch
-    from decision_adapters.greedy import GreedyDecisionAdapter
 
     ENV_JSON = "envs/env_configs/basic_01.json"
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     loaded = load_env(ENV_JSON, device=device)
     engine = loaded.env
     engine.log = False
-    adapter = GreedyDecisionAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
+    adapter = GreedyAdapter(k=50, scan_step=10.0, quant_step=10.0, random_seed=0)
     search = MCTSSearch(config=MCTSConfig(num_simulations=50, rollout_enabled=True, rollout_depth=5))
 
     agent = GreedyAgent(prior_temperature=1.0)

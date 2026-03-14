@@ -1,6 +1,6 @@
 """Dynamic Storage Wrapper for inference pipeline.
 
-DynamicStorageEnv를 GreedyV3DecisionAdapter와 유사한 인터페이스로 감싸서
+DynamicStorageEnv를 GreedyV3Adapter와 유사한 인터페이스로 감싸서
 기존 inference 파이프라인 (Agent, MCTS 등)과 호환되도록 합니다.
 
 사용법:
@@ -30,7 +30,7 @@ from envs.action_space import ActionSpace as CandidateSet
 class DynamicStorageWrapper(gym.Env):
     """DynamicStorageEnv용 Top-K Wrapper.
     
-    GreedyV3DecisionAdapter와 유사한 인터페이스:
+    GreedyV3Adapter와 유사한 인터페이스:
     - Action space: Discrete(k)
     - Observation: dynamic env base observation (no action-space fields)
     - cost 기반으로 top-k 후보 선택

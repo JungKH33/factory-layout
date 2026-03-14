@@ -9,7 +9,7 @@
 #
 # Assumptions:
 # - You will install `torchrl` and `tensordict` later.
-# - `envs/wrappers/maskplace.py:MaskPlaceDecisionAdapter` already returns torch.Tensor obs (incl. 'state')
+# - `envs/wrappers/maskplace.py:MaskPlaceAdapter` already returns torch.Tensor obs (incl. 'state')
 #   even on terminal/truncated (stable obs schema).
 #
 # Usage (example):
@@ -30,9 +30,8 @@ import torch
 from torch import nn
 import time
 
-from agents.maskplace import MaskPlaceModel
+from agents.placement.maskplace import MaskPlaceModel, MaskPlaceAdapter
 from envs.env_loader import load_env
-from decision_adapters.maskplace import MaskPlaceDecisionAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +138,7 @@ class _MaskPlaceTorchRLEnv:  # EnvBase subclass defined lazily after torchrl imp
 
 
 def build_torchrl_env(*, cfg: Cfg, device: torch.device):
-    """Build a TorchRL EnvBase that wraps MaskPlaceDecisionAdapter and emits TensorDicts on `device`."""
+    """Build a TorchRL EnvBase that wraps MaskPlaceAdapter and emits TensorDicts on `device`."""
     _require_torchrl()
     from tensordict import TensorDict
     from torchrl.envs import EnvBase
@@ -165,7 +164,7 @@ def build_torchrl_env(*, cfg: Cfg, device: torch.device):
             loaded = load_env(cfg.env_json, device=device, collision_check=cfg.collision_check)
             engine = loaded.env
             engine.log = False
-            self._gym = MaskPlaceDecisionAdapter(
+            self._gym = MaskPlaceAdapter(
                 engine=engine,
                 grid=int(cfg.grid),
                 rot=int(cfg.rot),
