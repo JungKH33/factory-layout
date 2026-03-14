@@ -1109,9 +1109,9 @@ if __name__ == "__main__":
 
     # --- zones / constraints ---
     zone_constraints = {
-        "weight": {"dtype": "float", "op": ">=", "default": 10.0, "areas": [{"rect": [60, 0, 120, 80], "value": 20.0}]},
-        "height": {"dtype": "float", "op": ">=", "default": 20.0, "areas": [{"rect": [0, 60, 120, 80], "value": 5.0}]},
-        "dry": {"dtype": "float", "op": "<=", "default": 0.0, "areas": [{"rect": [0, 40, 60, 80], "value": 2.0}]},
+        "weight": {"dtype": "float", "op": "<=", "default": 10.0, "areas": [{"rect": [60, 0, 120, 80], "value": 20.0}]},
+        "height": {"dtype": "float", "op": "<=", "default": 20.0, "areas": [{"rect": [0, 60, 120, 80], "value": 5.0}]},
+        "dry": {"dtype": "float", "op": ">=", "default": 0.0, "areas": [{"rect": [0, 40, 60, 80], "value": 2.0}]},
         "placeable": {"dtype": "int", "op": "==", "default": 0, "areas": [{"rect": [30, 20, 120, 80], "value": 1}]},
     }
 

@@ -74,9 +74,9 @@ class AlphaChipAgent:
         self.model.load_state_dict(state)
         self.model.eval()
         meta = obj.get("meta") if isinstance(obj, dict) else None
-        logger.info("[alphachip_agent] loaded_checkpoint=%s", path)
+        logger.info("alphachip_agent loaded_checkpoint=%s", path)
         if isinstance(meta, dict):
-            logger.info("[alphachip_agent] checkpoint_meta=%s", meta)
+            logger.info("alphachip_agent checkpoint_meta=%s", meta)
 
     @torch.no_grad()
     def policy(self, *, obs: dict, action_space: CandidateSet) -> torch.Tensor:
@@ -140,7 +140,7 @@ if __name__ == "__main__":
     a = agent.select_action(obs=obs, action_space=action_space)
     dt_ms = (time.perf_counter() - t0) * 1000.0
 
-    print("[alphachip_agent demo]")
+    print("alphachip_agent demo")
     print(" env=", ENV_JSON, "device=", dev, "next_gid=", (env.get_state().remaining[0] if env.get_state().remaining else None))
     print(" action=", a, "valid=", int(action_space.mask.sum().item()))
     print(f" elapsed_ms={dt_ms:.2f}")

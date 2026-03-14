@@ -335,7 +335,7 @@ if __name__ == "__main__":
     else:
         plot_layout(engine, action_space=None)
 
-    print("[MaskPlaceDecisionAdapter demo]")
+    print("MaskPlaceDecisionAdapter demo")
     print(" env=", ENV_JSON, "device=", device, "grid=", adapter.grid)
     print(" valid_actions=", valid, "first_valid_action=", a, "plotted=", int(xy.shape[0]))
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")

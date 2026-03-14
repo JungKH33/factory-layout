@@ -185,7 +185,8 @@ class GridMaps:
                 op = self._constraint_ops[cname]
                 dtype = self._constraint_dtypes[cname]
                 gval = self._coerce_group_value(zone_values[cname], dtype=dtype, cname=cname)
-                pass_mask = self._compare_constraint(cmap, gval, op=op)
+                # op = facility requirement: facility_value op zone_value (e.g. height<=30)
+                pass_mask = self._compare_constraint(gval, cmap, op=op)
                 z |= (~pass_mask)
             zone_invalid_by_gid[gid] = z
         self._zone_invalid_by_gid = zone_invalid_by_gid

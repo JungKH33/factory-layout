@@ -107,7 +107,7 @@ if __name__ == "__main__":
     valid_n = int(action_space.mask.sum().item())
     xyrot = action_space.xyrot[a].tolist() if int(action_space.xyrot.shape[0]) > 0 else [0, 0, 0]
 
-    print("[agents.greedy demo]")
+    print("agents.greedy demo")
     print(" env=", ENV_JSON, "device=", device, "next_gid=", next_gid)
     print(" action=", a, "valid_actions=", valid_n, "xyrot=", xyrot, "prior=", (float(pri[a].item()) if pri.numel() > 0 else 0.0))
     print(f" elapsed_ms={dt_ms:.3f}")

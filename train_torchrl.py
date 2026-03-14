@@ -309,13 +309,13 @@ def main() -> None:
             unexpected = list(getattr(msg, "unexpected_keys", []))
             if (not cfg.load_strict) and (missing or unexpected):
                 logger.warning(
-                    "[load_ckpt] strict=False missing_keys=%s unexpected_keys=%s",
+                    "load_ckpt strict=False missing_keys=%s unexpected_keys=%s",
                     missing,
                     unexpected,
                 )
         except Exception:
             pass
-        logger.info("[load_ckpt] loaded: %s", cfg.load_ckpt)
+        logger.info("load_ckpt loaded: %s", cfg.load_ckpt)
     # IMPORTANT: during rollout/collection, keep the model in eval mode to avoid BatchNorm
     # issues with batched execution in some TorchRL collector paths.
     model.eval()
@@ -475,7 +475,7 @@ def main() -> None:
                 },
                 str(best),
             )
-            logger.info("[best] updated best_mean_reward=%.6f", best_score)
+            logger.info("best updated best_mean_reward=%.6f", best_score)
 
         rb.empty()
 

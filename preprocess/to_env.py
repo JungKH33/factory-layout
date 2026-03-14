@@ -291,17 +291,12 @@ def convert_io_to_relative(
     width: float,
     height: float,
 ) -> Tuple[float, float, float, float]:
-    """Convert bottom-left absolute coords to center-relative coords.
+    """Pass through BL-relative coords as-is.
     
-    Source: entranceRelativeX/Y = absolute position from bottom-left (0,0)
-    Target: ent_rel_x/y = relative position from center (0,0)
+    Source: entranceRelativeX/Y = position from facility bottom-left (0,0)
+    Target: ent_rel_x/y = same (BL-relative). StaticSpec expects BL-relative.
     """
-    cx, cy = width / 2, height / 2
-    ent_rel_x = entrance_x - cx
-    ent_rel_y = entrance_y - cy
-    exi_rel_x = exit_x - cx
-    exi_rel_y = exit_y - cy
-    return ent_rel_x, ent_rel_y, exi_rel_x, exi_rel_y
+    return entrance_x, entrance_y, exit_x, exit_y
 
 
 def build_groups(
@@ -513,7 +508,7 @@ def build_zones(
             "areas": placeable_constraint_areas,
         }
 
-    # Height (>=)
+    # Height (<=)
     height_constraint_areas = []
     for area in area_ceilings:
         height_constraint_areas.append({
@@ -524,12 +519,12 @@ def build_zones(
         height_default = _require_default("ceilingHeight", default_height)
         constraints["height"] = {
             "dtype": "float",
-            "op": ">=",
+            "op": "<=",
             "default": height_default,
             "areas": height_constraint_areas,
         }
 
-    # Weight (>=)
+    # Weight (<=)
     weight_constraint_areas = []
     for area in area_weights:
         weight_constraint_areas.append({
@@ -540,12 +535,12 @@ def build_zones(
         weight_default = _require_default("weight", default_weight)
         constraints["weight"] = {
             "dtype": "float",
-            "op": ">=",
+            "op": "<=",
             "default": weight_default,
             "areas": weight_constraint_areas,
         }
 
-    # Dry (<=)
+    # Dry (>=)
     dry_constraint_areas = []
     for area in area_dry:
         dry_constraint_areas.append({
@@ -556,7 +551,7 @@ def build_zones(
         dry_default = _require_default("dry", default_dry)
         constraints["dry"] = {
             "dtype": "float",
-            "op": "<=",
+            "op": ">=",
             "default": dry_default,
             "areas": dry_constraint_areas,
         }

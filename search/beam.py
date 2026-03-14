@@ -290,7 +290,7 @@ if __name__ == "__main__":
     valid_n = int(root_action_space.mask.sum().item())
     xyrot = root_action_space.xyrot[a].tolist() if int(root_action_space.xyrot.shape[0]) > 0 else [0, 0, 0]
 
-    print("[search.beam demo]")
+    print("search.beam demo")
     print(" env=", ENV_JSON, "device=", device, "next_gid=", next_gid)
     print(" action=", a, "valid_actions=", valid_n, "xyrot=", xyrot)
     print(f" elapsed_ms={dt_ms:.2f}")

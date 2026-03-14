@@ -375,7 +375,7 @@ if __name__ == "__main__":
     else:
         plot_layout(engine, action_space=None)
 
-    print("[GreedyDecisionAdapter demo]")
+    print("GreedyDecisionAdapter demo")
     print(" env=", ENV_JSON, "device=", device, "k=", 50)
     print(" valid_actions=", valid, "first_valid_action=", a)
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")

@@ -30,7 +30,7 @@ from envs.action_space import ActionSpace as CandidateSet
 
 
 # --- config (module-level constants, keep simple) ---
-ENV_JSON: str = "envs/env_configs/clearance_01.json"
+ENV_JSON: str = "envs/env_configs/clearance_03.json"
 #ENV_JSON: str = "preprocess/조립.json"
 WRAPPER_MODE: str = "greedyv3"  # "greedy" | "alphachip" | "maskplace"
 AGENT_MODE: str = "greedy"  # "greedy" | "alphachip" | "maskplace"
@@ -176,7 +176,7 @@ def main() -> None:
     step = 0
     frames: list[StepFrame] = []
 
-    logger.info("[inference]")
+    logger.info("inference")
     logger.info(
         "ENV_JSON=%s WRAPPER_MODE=%s AGENT_MODE=%s SEARCH_MODE=%s device=%s",
         ENV_JSON,
@@ -238,14 +238,14 @@ def main() -> None:
         total_reward += float(reward)
         if action is None:
             logger.warning(
-                "[step] %s next_gid=%s search=%s reason=no_valid_actions",
+                "step %s next_gid=%s search=%s reason=no_valid_actions",
                 step,
                 next_gid,
                 SEARCH_MODE,
             )
         else:
             logger.info(
-                "[step] %s next_gid=%s search=%s action=(%s,%s,%s)",
+                "step %s next_gid=%s search=%s action=(%s,%s,%s)",
                 step,
                 next_gid,
                 dbg.get("search", SEARCH_MODE),
@@ -257,7 +257,7 @@ def main() -> None:
         if terminated or truncated:
             reason = info.get("reason", None)
             logger.info(
-                "[env] end: terminated=%s truncated=%s step=%s placed=%s cost=%.3f reason=%s",
+                "end: terminated=%s truncated=%s step=%s placed=%s cost=%.3f reason=%s",
                 terminated,
                 truncated,
                 step,
@@ -279,7 +279,7 @@ def main() -> None:
     if search is not None and hasattr(search, "top_tracker") and search.top_tracker is not None:
         top_results = search.top_tracker.get_results()
         if top_results:
-            logger.info("[Top-%s Search Results]", len(top_results))
+            logger.info("Top-%s Search Results", len(top_results))
             for i, result in enumerate(top_results):
                 logger.info(
                     "#%s: cost=%.2f, placed=%s, cum_reward=%.3f",

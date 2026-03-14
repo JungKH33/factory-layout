@@ -343,7 +343,7 @@ if __name__ == "__main__":
     
     # 1. env 로드 및 일부 그룹 배치
     config_path = "envs/env_configs/clearance_03.json"
-    print(f"[1] Loading: {config_path}")
+    print(f"Loading: {config_path}")
     loaded = load_env(config_path)
     env = loaded.env
     env.reset()
@@ -621,7 +621,7 @@ if __name__ == "__main__":
     # 6. Rotation Offset Comparison (before vs after offset)
     # ========================================================================
     print("\n" + "="*70)
-    print("[6] Rotation Offset Example")
+    print("Rotation Offset Example")
     print("="*70)
     
     # Settings - asymmetric clearance to show offset effect

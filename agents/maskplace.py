@@ -335,7 +335,7 @@ if __name__ == "__main__":
         probs, v = model(state)
         cnn_res = torch.zeros((B, 1, grid, grid), dtype=torch.float32, device=device)
 
-    print("[agents.maskplace demo]")
+    print("agents.maskplace demo")
     print(" device=", device)
     print(" state.shape=", tuple(state.shape))
     print(" maps.shape=", tuple(maps.shape), "(B,5,224,224)")

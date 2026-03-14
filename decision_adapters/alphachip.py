@@ -256,13 +256,13 @@ if __name__ == "__main__":
 
     def _plot_alphachip_graph(obs: dict[str, object], *, title: str, max_edges: int = 2000) -> None:
         if "x" not in obs or "edge_index" not in obs or "current_node" not in obs:
-            print("[plot_graph] missing one of: x, edge_index, current_node")
+            print("plot_graph: missing one of: x, edge_index, current_node")
             return
 
         x = _as_numpy(obs["x"])
         ei = _as_numpy(obs["edge_index"]).astype(np.int64)
         if ei.ndim != 2 or ei.shape[0] != 2:
-            print(f"[plot_graph] edge_index must be [2,E], got {ei.shape}")
+            print(f"plot_graph: edge_index must be [2,E], got {ei.shape}")
             return
         n = int(x.shape[0]) if x.ndim >= 1 else 0
         e = int(ei.shape[1])
@@ -279,11 +279,11 @@ if __name__ == "__main__":
         for u, v in zip(src, dst):
             G.add_edge(int(u), int(v))
 
-        print(f"[graph] nodes={G.number_of_nodes()} edges={G.number_of_edges()} (cap={max_edges})")
+        print(f"graph: nodes={G.number_of_nodes()} edges={G.number_of_edges()} (cap={max_edges})")
         if 0 <= cur < n:
-            print(f"[graph] cur out_deg={G.out_degree(cur)} in_deg={G.in_degree(cur)}")
+            print(f"graph: cur out_deg={G.out_degree(cur)} in_deg={G.in_degree(cur)}")
         else:
-            print(f"[graph] WARNING: current_node={cur} out of range [0,{n})")
+            print(f"graph: WARNING: current_node={cur} out of range [0,{n})")
 
         pos = nx.spring_layout(G, seed=42)
         node_colors = ["#d62728" if int(i) == int(cur) else "#1f77b4" for i in G.nodes()]
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     else:
         plot_layout(engine, action_space=None)
 
-    print("[AlphaChipDecisionAdapter demo]")
+    print("AlphaChipDecisionAdapter demo")
     print(" env=", ENV_JSON, "device=", device, "G=", adapter.coarse_grid)
     print(" valid_actions=", valid, "first_valid_action=", a)
     print(f" reset_ms={dt_reset_ms:.3f} step_ms={dt_step_ms:.3f}")

@@ -536,7 +536,7 @@ async def _broadcast_progress(session: Session, progress, callback) -> None:
         )
         await asyncio.sleep(0.001)  # Small yield to allow other tasks
     except Exception:
-        logger.warning("[WebUI] Progress broadcast error", exc_info=True)
+        logger.warning("WebUI Progress broadcast error", exc_info=True)
 
 
 @app.delete("/api/session/{sid}")

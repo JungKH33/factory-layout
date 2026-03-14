@@ -279,7 +279,7 @@ if __name__ == "__main__":
     
     # 1. env 로드
     config_path = "envs/env_configs/clearance_03.json"
-    print(f"[1] Loading: {config_path}")
+    print(f"Loading: {config_path}")
     env = load_env(config_path).env
     
     # 2. 설비 배치

@@ -112,7 +112,7 @@ if __name__ == "__main__":
             raise
     dt_ms = (time.perf_counter() - t0) * 1000.0
 
-    print("[pipeline demo]")
+    print("pipeline demo")
     print(" env=", ENV_JSON, "device=", device, "next_gid=", (engine.get_state().remaining[0] if engine.get_state().remaining else None))
     print(" result=", {"reason": reason, "action": None if reason != "ok" else (action.x, action.y, action.rot)})
     print(" debug=", dbg)

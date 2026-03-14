@@ -438,7 +438,7 @@ class FactoryLayoutEnv(gym.Env):
         penalty = float(self._terminal.penalty(self._state))
         total_cost = base_cost + penalty
         logger.warning(
-            "[env] fail: reason=%s remaining=%d cost=%.3f (base=%.3f + penalty=%.3f) reward=%.3f",
+            "fail: reason=%s remaining=%d cost=%.3f (base=%.3f + penalty=%.3f) reward=%.3f",
             reason,
             len(self._state.remaining),
             total_cost,
@@ -530,7 +530,7 @@ class FactoryLayoutEnv(gym.Env):
         if terminated or truncated:
             total_cost = self.total_cost()
             logger.info(
-                "[env] end: terminated=%s truncated=%s remaining=%d placed=%d step=%d cost=%.3f reason=placed reward=%.3f",
+                "end: terminated=%s truncated=%s remaining=%d placed=%d step=%d cost=%.3f reason=placed reward=%.3f",
                 terminated,
                 truncated,
                 len(self._state.remaining),
@@ -659,19 +659,19 @@ if __name__ == "__main__":
     zone_constraints = {
         "weight": {
             "dtype": "float",
-            "op": ">=",
+            "op": "<=",
             "default": 10.0,
             "areas": [{"rect": [60, 0, 120, 80], "value": 20.0}],
         },
         "height": {
             "dtype": "float",
-            "op": ">=",
+            "op": "<=",
             "default": 20.0,
             "areas": [{"rect": [0, 60, 120, 80], "value": 5.0}],
         },
         "dry": {
             "dtype": "float",
-            "op": "<=",
+            "op": ">=",
             "default": 0.0,
             "areas": [{"rect": [0, 40, 60, 80], "value": 2.0}],
         },
@@ -704,7 +704,7 @@ if __name__ == "__main__":
     obs, _ = env.reset(options={"initial_positions": initial_positions})
     reset_ms = (time.perf_counter() - t1) * 1000.0
 
-    print("[env_demo]")
+    print("env_demo")
     print(f" device={dev}  init_ms={init_ms:.2f}  reset_ms={reset_ms:.2f}")
     print(f" placed={sorted(env.get_state().placed)}  remaining={env.get_state().remaining}")
     print(f" flow_port_pairs after reset: {env.get_state().flow_port_pairs}")

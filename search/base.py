@@ -111,7 +111,7 @@ class TopKTracker:
             worst_cost = -self._heap[0][0] if self._heap else float("inf")
             best_cost = self.best_cost()
             logger.info(
-                "[TopK] New result: cost=%.2f | Top-%d range: [%.2f ~ %.2f]",
+                "TopK New result: cost=%.2f | Top-%d range: [%.2f ~ %.2f]",
                 result.cost,
                 len(self._heap),
                 best_cost,

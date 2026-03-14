@@ -123,7 +123,7 @@ def main() -> None:
     logger.info("=" * 60)
     
     # ===== 1. Base 환경 로드 =====
-    logger.info("[1] Loading base environment: %s", BASE_ENV_JSON)
+    logger.info("Loading base environment: %s", BASE_ENV_JSON)
     loaded = load_env(BASE_ENV_JSON, device=device)
     base_env = loaded.env
     base_env.reset(options=loaded.reset_kwargs)
@@ -149,7 +149,7 @@ def main() -> None:
     ]
     
     if PRE_PLACEMENTS:
-        logger.info("[1.5] Pre-placing %s groups (hardcoded)", len(PRE_PLACEMENTS))
+        logger.info("Pre-placing %s groups (hardcoded)", len(PRE_PLACEMENTS))
         for gid, x, y, rot in PRE_PLACEMENTS:
             if gid in base_env.get_state().remaining:
                 _obs, _reward, _terminated, _truncated, info = base_env.step_action(
@@ -165,7 +165,7 @@ def main() -> None:
         logger.info("Now placed: %s", list(base_env.get_state().placed))
     
     # ===== 2. Storage 설정 =====
-    logger.info("[2] Storage configuration")
+    logger.info("Storage configuration")
     configs = [DynamicGroupConfig(**cfg) for cfg in STORAGE_CONFIGS]
     
     for cfg in configs:
@@ -179,7 +179,7 @@ def main() -> None:
         )
     
     # ===== 3. Flow 설정 =====
-    logger.info("[3] Flow configuration")
+    logger.info("Flow configuration")
     if GROUP_FLOW is not None:
         group_flow = GROUP_FLOW
     else:
@@ -203,7 +203,7 @@ def main() -> None:
     logger.info("Group flow: %s", group_flow)
     
     # ===== 4. Dynamic Env 생성 =====
-    logger.info("[4] Creating DynamicStorageEnv")
+    logger.info("Creating DynamicStorageEnv")
     dynamic_env = DynamicStorageEnv(
         base_env=base_env,
         configs=configs,
@@ -211,7 +211,7 @@ def main() -> None:
     )
     
     # ===== 5. Wrapper 적용 =====
-    logger.info("[5] Creating DynamicStorageWrapper (k=%s)", TOPK_K)
+    logger.info("Creating DynamicStorageWrapper (k=%s)", TOPK_K)
     env = DynamicStorageWrapper(
         dynamic_env=dynamic_env,
         k=TOPK_K,
@@ -219,7 +219,7 @@ def main() -> None:
     )
     
     # ===== 6. Agent & Search =====
-    logger.info("[6] Setting up Agent and Search")
+    logger.info("Setting up Agent and Search")
     agent = GreedyAgent(prior_temperature=1.0)
     
     if SEARCH_MODE == "none":
@@ -244,7 +244,7 @@ def main() -> None:
         search = None
     
     # ===== 7. 실행 =====
-    logger.info("[7] Running inference")
+    logger.info("Running inference")
     logger.info("=" * 60)
     
     obs, info = env.reset()
@@ -267,7 +267,7 @@ def main() -> None:
             terminated = False
             truncated = True
             info = {"reason": "no_valid_actions"}
-            logger.warning("[step %s] gid=%s, reason=no_valid_actions", step, current_gid)
+            logger.warning("step %s gid=%s, reason=no_valid_actions", step, current_gid)
             total_reward += float(reward)
             break
         action = int(agent.select_action(obs=obs_decision, action_space=action_space))
@@ -277,7 +277,7 @@ def main() -> None:
         # 로그
         x, y, rot, _, _ = env.decode_action(int(action))
         logger.info(
-            "[step %s] gid=%s, action=%s, pos=(%s,%s), rot=%s, units=%s, cells=%s, reward=%.3f",
+            "step %s gid=%s, action=%s, pos=(%s,%s), rot=%s, units=%s, cells=%s, reward=%.3f",
             step,
             current_gid,
             action,
@@ -290,9 +290,9 @@ def main() -> None:
         )
         
         if terminated:
-            logger.info("[DONE] All storage groups placed!")
+            logger.info("DONE: All storage groups placed!")
         elif truncated:
-            logger.warning("[TRUNCATED] reason=%s", info.get("reason", "unknown"))
+            logger.warning("TRUNCATED: reason=%s", info.get("reason", "unknown"))
     
     end = time.perf_counter()
     
@@ -302,7 +302,7 @@ def main() -> None:
     logger.info("Total reward: %.3f", total_reward)
     
     # ===== 8. 시각화 =====
-    logger.info("[8] Visualization")
+    logger.info("Visualization")
     
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches

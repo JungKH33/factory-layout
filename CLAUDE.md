@@ -123,7 +123,7 @@ DecisionPipeline.decide():
 }
 ```
 
-Zone constraint logic: weight `<` → invalid, height `<` → invalid, dry `>` → invalid (reversed), allowed_areas → must be inside.
+Zone constraint logic: op is facility requirement (e.g. `height<=30` → facility height must be ≤ zone value; `weight>=10` → facility weight must be ≥ zone value). Valid when `facility_value op zone_value`.
 
 `env_loader.load_env(path, device)` returns `LoadedEnv(env, reset_kwargs)`.
 
@@ -139,7 +139,7 @@ Zone constraint logic: weight `<` → invalid, height `<` → invalid, dry `>` �
 
 ## Key Conventions
 
-- **Coordinate system**: bottom-left origin `(x_bl, y_bl)`, rotation in `{0, 90, 180, 270}` degrees CCW. Tensor indexing is `tensor[y, x]`.
+- **Coordinate system**: bottom-left origin `(x_bl, y_bl)`, rotation in `{0, 90, 180, 270}` degrees CCW. Tensor indexing is `tensor[y, x]`. Port coords (`ent_rel_x/y`, `exi_rel_x/y`) are BL-relative.
 - **Grid units**: integer cells. `grid_size` (meters/cell) is only for display/output.
 - **Device ownership**: engine's `device` is set at construction; all tensors follow it. Adapters inherit device on `bind()`.
 - **`inference.py` config**: module-level constants (`ENV_JSON`, `WRAPPER_MODE`, `AGENT_MODE`, `SEARCH_MODE`, etc.) — no CLI args.
