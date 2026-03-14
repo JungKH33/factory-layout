@@ -7,7 +7,6 @@ from typing import ClassVar, Dict, List, Optional, Tuple
 import torch
 
 from ..action import EnvAction, GroupId
-from ..action_space import ActionSpace
 from ..placement.static import StaticSpec
 from .flow import FlowGraph
 from .maps import GridMaps
@@ -252,62 +251,6 @@ class EnvState:
             cB=int(cB),
             cT=int(cT),
         )
-
-    def is_placeable_mask(
-        self,
-        *,
-        action_space: ActionSpace,
-        spec: StaticSpec,
-    ) -> torch.Tensor:
-        gid = action_space.gid
-        if gid is None:
-            raise ValueError("action_space.gid is required")
-        device = torch.device(self.device)
-        xyrot = action_space.xyrot.to(dtype=torch.long, device=device).view(-1, 3)
-        valid = action_space.mask.to(dtype=torch.bool, device=device).view(-1)
-        if int(xyrot.shape[0]) == 0:
-            return valid
-
-        w0, h0 = spec._rotated_size(0)
-        cL0, cR0, cB0, cT0 = spec._clearance_lrtb(0)
-        map_0 = self.maps.is_placeable_map(
-            gid=gid,
-            body_w=int(w0),
-            body_h=int(h0),
-            cL=int(cL0),
-            cR=int(cR0),
-            cB=int(cB0),
-            cT=int(cT0),
-        )
-        w90, h90 = spec._rotated_size(90)
-        cL90, cR90, cB90, cT90 = spec._clearance_lrtb(90)
-        map_90 = self.maps.is_placeable_map(
-            gid=gid,
-            body_w=int(w90),
-            body_h=int(h90),
-            cL=int(cL90),
-            cR=int(cR90),
-            cB=int(cB90),
-            cT=int(cT90),
-        )
-
-        H, W = self.maps.shape
-        x = xyrot[:, 0]
-        y = xyrot[:, 1]
-        rot = xyrot[:, 2]
-        in_bounds = (x >= 0) & (x < W) & (y >= 0) & (y < H)
-        rot_norm = torch.remainder(rot, 360)
-        if torch.any((rot_norm % 90) != 0):
-            raise ValueError("rot must be multiples of 90")
-        if not bool(spec.rotatable):
-            rot_norm = torch.zeros_like(rot_norm)
-        is_rot0 = (rot_norm == 0) | (rot_norm == 180)
-        x_clamped = x.clamp(0, W - 1)
-        y_clamped = y.clamp(0, H - 1)
-        result_0 = map_0[y_clamped, x_clamped]
-        result_90 = map_90[y_clamped, x_clamped]
-        can = torch.where(is_rot0, result_0, result_90) & in_bounds
-        return can & valid
 
     def placed_bbox(self) -> Tuple[float, float, float, float]:
         return self.maps.placed_bbox()

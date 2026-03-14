@@ -296,16 +296,6 @@ class FactoryLayoutEnv(gym.Env):
             spec=geom,
         )
 
-    def is_placeable_mask(self, action_space: ActionSpace) -> torch.Tensor:
-        gid = action_space.gid
-        if gid is None:
-            raise ValueError("action_space.gid is required")
-        geom = self._group_spec(gid)
-        return self._state.is_placeable_mask(
-            action_space=action_space,
-            spec=geom,
-        )
-
     def _apply_resolved_placement(
         self,
         gid: GroupId,
